@@ -14,8 +14,7 @@ import (
 func TestMain(t *testing.T) {
 	token := os.Getenv("TOKEN")
 	vk := api.NewVK(token)
-	vk.Handler = packer.New([]string{token}, packer.Debug()).Handler
-
+	vk.Handler = packer.New(packer.Debug())
 	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {

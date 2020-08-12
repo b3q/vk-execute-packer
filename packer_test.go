@@ -9,7 +9,7 @@ import (
 )
 
 func TestExecutionCode(t *testing.T) {
-	p := New(nil)
+	p := NewPacker()
 	go p.Handler("Account.getInfo", api.Params{
 		"bar": 123,
 	})

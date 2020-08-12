@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,23 +15,46 @@ import (
 	"github.com/SevereCloud/vksdk/object"
 )
 
+// TokenRPS ...
+type TokenRPS = int
+
+const (
+	// UserTokenRPS ...
+	UserTokenRPS TokenRPS = 3
+	//GroupTokenRPS ...
+	GroupTokenRPS TokenRPS = 20
+)
+
 type request struct {
 	method  string
 	params  api.Params
 	handler func(api.Response, error)
 }
 
+// FilterMode ...
+type FilterMode bool
+
+const (
+	// Allow mode
+	Allow FilterMode = true
+	// Ignore mode
+	Ignore FilterMode = false
+)
+
 // Packer struct
 type Packer struct {
-	lastFlushTime     time.Time
 	flushTimeout      time.Duration
+	lastFlushTime     time.Time
 	maxPackedRequests int
-	tokens            chan string
+	tokenPool         *tokenPool
+	tokenLazyLoading  bool
 	requestID         int
 	handlers          map[string]request
-	blockList         map[string]struct{}
+	filterMode        FilterMode
+	filterMethods     map[string]struct{}
 	mtx               sync.Mutex
 	debug             bool
+	baseHandler       *baseHandler
 }
 
 // Option func
@@ -53,11 +77,12 @@ func Timeout(dur time.Duration) Option {
 	}
 }
 
-// Ignore opt
-func Ignore(methods ...string) Option {
+// Rules opt
+func Rules(mode FilterMode, methods ...string) Option {
 	return func(p *Packer) {
 		for _, m := range methods {
-			p.blockList[m] = struct{}{}
+			p.filterMode = mode
+			p.filterMethods[m] = struct{}{}
 		}
 	}
 }
@@ -66,25 +91,46 @@ func Ignore(methods ...string) Option {
 func Debug() Option {
 	return func(p *Packer) {
 		p.debug = true
+		p.baseHandler.debug = true
 	}
 }
 
-// New ...
-func New(tokens []string, opts ...Option) *Packer {
-	tchan := make(chan string, len(tokens))
-	for _, tok := range tokens {
-		tchan <- tok
+// Tokens opt
+func Tokens(tokens ...string) Option {
+	return func(p *Packer) {
+		p.tokenLazyLoading = false
+		p.tokenPool = newTokenPool(tokens...)
 	}
+}
 
+// HTTPClient opt
+func HTTPClient(client *http.Client) Option {
+	return func(p *Packer) {
+		p.baseHandler.client = client
+	}
+}
+
+// RPSPerToken opt
+func RPSPerToken(rps TokenRPS) Option {
+	return func(p *Packer) {
+		p.baseHandler = newBaseHandler(rps)
+	}
+}
+
+// NewPacker ...
+func NewPacker(opts ...Option) *Packer {
 	p := &Packer{
+		tokenLazyLoading:  true,
+		tokenPool:         newTokenPool(),
 		lastFlushTime:     time.Now(),
 		flushTimeout:      time.Second * 2,
 		maxPackedRequests: 25,
 		handlers:          make(map[string]request),
-		tokens:            tchan,
-		blockList: map[string]struct{}{
+		filterMode:        Ignore,
+		filterMethods: map[string]struct{}{
 			"execute": {},
 		},
+		baseHandler: newBaseHandler(3),
 	}
 
 	for _, opt := range opts {
@@ -95,14 +141,40 @@ func New(tokens []string, opts ...Option) *Packer {
 	return p
 }
 
+// New ...
+func New(opts ...Option) func(method string, params api.Params) (api.Response, error) {
+	p := NewPacker(opts...)
+	return p.Handler
+}
+
 // Handler func
 func (p *Packer) Handler(method string, params api.Params) (api.Response, error) {
 	if p.debug {
 		log.Printf("packer: Handler call (%s)\n", method)
 	}
-	if _, ok := p.blockList[method]; ok {
 
+	{
+		_, found := p.filterMethods[method]
+		if (p.filterMode == Allow && !found) ||
+			(p.filterMode == Ignore && found) {
+			return p.baseHandler.Handle(method, params)
+		}
 	}
+
+	if p.tokenLazyLoading {
+		tokenIface, ok := params["access_token"]
+		if !ok {
+			panic("packer: missing access_token param")
+		}
+
+		token, ok := tokenIface.(string)
+		if !ok {
+			panic("packer: bad access_token type")
+		}
+
+		p.tokenPool.append(token)
+	}
+
 	var (
 		resp api.Response
 		err  error
@@ -158,7 +230,7 @@ func (p *Packer) Flush() {
 }
 
 func (p *Packer) flush() error {
-	packedResp, err := p.execute(p.getToken(), p.requestsToCode())
+	packedResp, err := p.execute(p.tokenPool.get(), p.requestsToCode())
 	if err != nil {
 		return err
 	}
@@ -210,12 +282,6 @@ func (p *Packer) flushMon() {
 	}
 }
 
-func (p *Packer) getToken() string {
-	token := <-p.tokens
-	p.tokens <- token
-	return token
-}
-
 func (p *Packer) requestsToCode() string {
 	var sb strings.Builder
 	requestIndex := 0
@@ -248,7 +314,12 @@ func (p *Packer) requestsToCode() string {
 
 	sb.WriteString(strings.Join(resps, ","))
 	sb.WriteString("};")
-	return sb.String()
+	s := sb.String()
+
+	if p.debug {
+		log.Printf("packer: code:\n%s\n", s)
+	}
+	return s
 }
 
 func executeErrorToMethodError(req request, err object.ExecuteError) object.Error {
