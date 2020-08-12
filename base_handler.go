@@ -67,16 +67,16 @@ func (base *baseHandler) Handle(method string, params api.Params) (api.Response,
 		base.mapLock.Unlock()
 	}
 
-	req, err := http.NewRequest(http.MethodPost, u, bytes.NewBufferString(query.Encode()))
-	if err != nil {
-		return apiResp, err
-	}
-	req.Header.Set("User-Agent", "boo")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
 	for {
 		limiter.Take()
 		attempts++
+
+		req, err := http.NewRequest(http.MethodPost, u, bytes.NewBufferString(query.Encode()))
+		if err != nil {
+			return apiResp, err
+		}
+		req.Header.Set("User-Agent", "boo")
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 		resp, err := base.client.Do(req)
 		if err != nil {
@@ -90,11 +90,10 @@ func (base *baseHandler) Handle(method string, params api.Params) (api.Response,
 				return apiResp, err
 			}
 
+			log.Printf("packer: %s response:\n%s\n", method, bodyBytes)
 			if err := json.Unmarshal(bodyBytes, &apiResp); err != nil {
 				return apiResp, err
 			}
-
-			log.Printf("packer: %s response:\n%s\n", method, bodyBytes)
 		} else {
 			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
 				return apiResp, err
@@ -110,8 +109,9 @@ func (base *baseHandler) Handle(method string, params api.Params) (api.Response,
 			if errors.GetType(err) == errors.TooMany && attempts < tooManyMaxAttempts {
 				continue
 			}
-
 			return apiResp, err
 		}
+
+		return apiResp, nil
 	}
 }
