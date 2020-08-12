@@ -22,10 +22,7 @@ import (
 func main() {
 	token := os.Getenv("TOKEN")
 	vk := api.NewVK(token)
-	vk.Handler = packer.New(
-		[]string{token}, // токены для execute-ов
-		packer.Debug(),  // принт дебаг инфы
-	).Handler
+	vk.Handler = packer.New()
 
 	resp, err := vk.UtilsResolveScreenName(
 		params.NewUtilsResolveScreenNameBuilder().
