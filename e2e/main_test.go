@@ -4,7 +4,6 @@ import (
 	"os"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/SevereCloud/vksdk/api"
 	packer "github.com/b3q/vk-execute-packer"
@@ -35,6 +34,5 @@ func TestMain(t *testing.T) {
 		_, err := vk.AccountGetInfo(nil)
 		assert.Nil(t, err)
 	}()
-	time.Sleep(1 * time.Second)
 	wg.Wait()
 }
