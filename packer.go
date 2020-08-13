@@ -10,7 +10,7 @@ import (
 	"github.com/SevereCloud/vksdk/api"
 )
 
-// FilterMode ...
+// FilterMode - batch filter mode
 type FilterMode bool
 
 const (
@@ -31,13 +31,13 @@ type Packer struct {
 	debug             bool
 	handler           func(string, api.Params) (api.Response, error)
 	requests          chan request
-	forceFlush        chan struct{}
+	forceSend         chan struct{}
 }
 
-// Option func
+// Option - Packer option
 type Option func(*Packer)
 
-// MaxPackedRequests opt
+// MaxPackedRequests sets the maximum API calls inside one batch.
 func MaxPackedRequests(max int) Option {
 	if max < 1 || max > 25 {
 		max = 25
@@ -47,7 +47,7 @@ func MaxPackedRequests(max int) Option {
 	}
 }
 
-// Rules opt
+// Rules sets the batching rules (ignore some methods or allow it).
 func Rules(mode FilterMode, methods ...string) Option {
 	return func(p *Packer) {
 		for _, m := range methods {
@@ -57,14 +57,15 @@ func Rules(mode FilterMode, methods ...string) Option {
 	}
 }
 
-// Debug opt
+// Debug enables printing debug info into stdout.
 func Debug() Option {
 	return func(p *Packer) {
 		p.debug = true
 	}
 }
 
-// Tokens opt
+// Tokens provides tokens which will be used for sending batch requests.
+// If tokens are not provided, packer will use tokens from incoming requests.
 func Tokens(tokens ...string) Option {
 	return func(p *Packer) {
 		p.tokenLazyLoading = false
@@ -72,7 +73,14 @@ func Tokens(tokens ...string) Option {
 	}
 }
 
-// New ...
+// New creates a new Packer.
+// Also automatically wraps vk.Handler with their own (for batching requests).
+//
+// NOTE: this method will not create any trigger for sending batches
+// which means that the batch will be sent only when the number of requests in it
+// equals to 'maxPackedRequests' (default 25, can be overwritten with MaxPackedRequests() option).
+// You will need to use TimeoutTrigger or create your custom trigger
+// which calls packer.Send() method to solve this behavior.
 func New(vk *api.VK, opts ...Option) *Packer {
 	p := &Packer{
 		tokenLazyLoading:  true,
@@ -83,7 +91,7 @@ func New(vk *api.VK, opts ...Option) *Packer {
 		filterMethods:     make(map[string]struct{}),
 		handler:           vk.Handler,
 		requests:          make(chan request, 10),
-		forceFlush:        make(chan struct{}),
+		forceSend:         make(chan struct{}),
 	}
 	vk.Handler = p.Handler
 
@@ -95,14 +103,15 @@ func New(vk *api.VK, opts ...Option) *Packer {
 	return p
 }
 
-// Default func
+// Default creates new Packer, wraps vk.Handler and creates
+// timeout-based trigger for sending batches every 2 seconds.
 func Default(vk *api.VK, opts ...Option) {
 	p := New(vk, opts...)
 	go TimeoutTrigger(time.Second*2, p)
 	vk.Handler = p.Handler
 }
 
-// Handler func
+// Handler implements vk.Handler function, which proceeds requests to VK API.
 func (p *Packer) Handler(method string, params api.Params) (api.Response, error) {
 	if p.debug {
 		log.Printf("packer: Handler call (%s)\n", method)
@@ -162,31 +171,31 @@ func (p *Packer) worker(ctx context.Context) {
 				if p.debug {
 					log.Println("packer: sending batch...")
 				}
-				go batch.Flush()
+				go batch.Send()
 				batch = newBatch(p.execute, p.debug)
 				requestsCount = 0
 			}
-		case <-p.forceFlush:
+		case <-p.forceSend:
 			if requestsCount == 0 {
 				continue
 			}
 			if p.debug {
 				log.Println("packer: forced sending batch...")
 			}
-			go batch.Flush()
+			go batch.Send()
 			batch = newBatch(p.execute, p.debug)
 			requestsCount = 0
 		}
 	}
 }
 
-// Flush func
-func (p *Packer) Flush() {
-	p.forceFlush <- struct{}{}
+// Send triggers to send current batch.
+func (p *Packer) Send() {
+	p.forceSend <- struct{}{}
 	atomic.StoreInt64(&p.lastFlushTimeUnix, time.Now().Unix())
 }
 
-// LastFlushTime fn
-func (p *Packer) LastFlushTime() time.Time {
+// LastSendTime returns time of last sent batch.
+func (p *Packer) LastSendTime() time.Time {
 	return time.Unix(atomic.LoadInt64(&p.lastFlushTimeUnix), 0)
 }

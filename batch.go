@@ -44,15 +44,15 @@ func (b *batch) appendRequest(req request) {
 	b.callbacks[requestID] = req
 }
 
-func (b *batch) Flush() {
-	if err := b.flush(); err != nil {
+func (b *batch) Send() {
+	if err := b.send(); err != nil {
 		for _, info := range b.callbacks {
 			info.handler(api.Response{}, err)
 		}
 	}
 }
 
-func (b *batch) flush() error {
+func (b *batch) send() error {
 	packedResp, err := b.execute(b.code())
 	if err != nil {
 		return err
