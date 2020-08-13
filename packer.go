@@ -54,7 +54,7 @@ type Packer struct {
 	filterMethods     map[string]struct{}
 	mtx               sync.Mutex
 	debug             bool
-	baseHandler       *baseHandler
+	defaultHandler    *defaultHandler
 }
 
 // Option func
@@ -91,7 +91,7 @@ func Rules(mode FilterMode, methods ...string) Option {
 func Debug() Option {
 	return func(p *Packer) {
 		p.debug = true
-		p.baseHandler.debug = true
+		p.defaultHandler.debug = true
 	}
 }
 
@@ -106,14 +106,14 @@ func Tokens(tokens ...string) Option {
 // HTTPClient opt
 func HTTPClient(client *http.Client) Option {
 	return func(p *Packer) {
-		p.baseHandler.client = client
+		p.defaultHandler.client = client
 	}
 }
 
 // RPSPerToken opt
 func RPSPerToken(rps TokenRPS) Option {
 	return func(p *Packer) {
-		p.baseHandler = newBaseHandler(rps)
+		p.defaultHandler = newDefaultHandler(rps)
 	}
 }
 
@@ -130,7 +130,7 @@ func NewPacker(opts ...Option) *Packer {
 		filterMethods: map[string]struct{}{
 			"execute": {},
 		},
-		baseHandler: newBaseHandler(3),
+		defaultHandler: newDefaultHandler(3),
 	}
 
 	for _, opt := range opts {
@@ -157,7 +157,7 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 		_, found := p.filterMethods[method]
 		if (p.filterMode == Allow && !found) ||
 			(p.filterMode == Ignore && found) {
-			return p.baseHandler.Handle(method, params)
+			return p.defaultHandler.Handle(method, params)
 		}
 	}
 
@@ -243,8 +243,7 @@ func (p *Packer) flush() error {
 		}
 
 		var err error
-		// если результат false
-		if bytes.Compare(resp.Body, []byte{0x66, 0x61, 0x6c, 0x73, 0x65}) == 0 {
+		if bytes.Compare(resp.Body, []byte("false")) == 0 {
 			e := packedResp.Errors[failedRequestIndex]
 			err = errors.New(executeErrorToMethodError(info, e))
 			failedRequestIndex++
