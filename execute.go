@@ -29,7 +29,7 @@ func (p *Packer) execute(code string) (packedExecuteResponse, error) {
 		return packedExecuteResponse{}, err
 	}
 
-	if p.debug{
+	if p.debug {
 		log.Printf("packer: execute response: \n%s\n", apiResp.Response)
 	}
 
