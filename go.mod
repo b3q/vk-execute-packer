@@ -4,8 +4,7 @@ go 1.14
 
 require (
 	github.com/SevereCloud/vksdk v1.10.0
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/stretchr/testify v1.6.1
 	github.com/tidwall/gjson v1.6.0
-	go.uber.org/atomic v1.6.0 // indirect
-	go.uber.org/ratelimit v0.1.0
 )
