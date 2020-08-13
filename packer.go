@@ -70,8 +70,8 @@ func Tokens(tokens ...string) Option {
 	}
 }
 
-// NewPacker ...
-func NewPacker(vk *api.VK, flusher Flusher, opts ...Option) *Packer {
+// New ...
+func New(vk *api.VK, opts ...Option) *Packer {
 	p := &Packer{
 		tokenLazyLoading:  true,
 		tokenPool:         newTokenPool(),
@@ -87,18 +87,14 @@ func NewPacker(vk *api.VK, flusher Flusher, opts ...Option) *Packer {
 	}
 
 	p.currentTask = newTask(p.execute, p.debug)
-	go flusher(p)
 
 	return p
 }
 
 // Default func
 func Default(vk *api.VK, opts ...Option) {
-	p := NewPacker(
-		vk,
-		TimeoutBasedFlusher(time.Second*1),
-		opts...,
-	)
+	p := New(vk, opts...)
+	go TimeoutTrigger(time.Second, p)
 	vk.Handler = p.Handler
 }
 
