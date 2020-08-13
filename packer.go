@@ -15,16 +15,6 @@ import (
 	"github.com/SevereCloud/vksdk/object"
 )
 
-// TokenRPS ...
-type TokenRPS = int
-
-const (
-	// UserTokenRPS ...
-	UserTokenRPS TokenRPS = 3
-	//GroupTokenRPS ...
-	GroupTokenRPS TokenRPS = 20
-)
-
 type request struct {
 	method  string
 	params  api.Params
@@ -111,7 +101,7 @@ func HTTPClient(client *http.Client) Option {
 }
 
 // RPSPerToken opt
-func RPSPerToken(rps TokenRPS) Option {
+func RPSPerToken(rps int) Option {
 	return func(p *Packer) {
 		p.defaultHandler = newDefaultHandler(rps)
 	}
@@ -130,7 +120,7 @@ func NewPacker(opts ...Option) *Packer {
 		filterMethods: map[string]struct{}{
 			"execute": {},
 		},
-		defaultHandler: newDefaultHandler(3),
+		defaultHandler: newDefaultHandler(api.LimitGroupToken),
 	}
 
 	for _, opt := range opts {
