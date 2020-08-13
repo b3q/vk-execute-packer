@@ -45,6 +45,7 @@ type Packer struct {
 	mtx               sync.Mutex
 	debug             bool
 	defaultHandler    *defaultHandler
+	stop              chan struct{}
 }
 
 // Option func
@@ -121,6 +122,7 @@ func NewPacker(opts ...Option) *Packer {
 			"execute": {},
 		},
 		defaultHandler: newDefaultHandler(api.LimitGroupToken),
+		stop:           make(chan struct{}),
 	}
 
 	for _, opt := range opts {
@@ -268,6 +270,12 @@ func (p *Packer) flushMon() {
 		if p.debug {
 			log.Println("packer: flushMon: skipping")
 		}
+		select {
+		case <-p.stop:
+			p.defaultHandler.Close()
+			return
+		default:
+		}
 	}
 }
 
@@ -325,4 +333,8 @@ func executeErrorToMethodError(req request, err object.ExecuteError) object.Erro
 		Code:          err.ErrorCode,
 		RequestParams: params,
 	}
+}
+
+func (p *Packer) Close() {
+
 }
