@@ -119,7 +119,7 @@ func (task *task) Len() int {
 
 func (task *task) code() string {
 	var sb strings.Builder
-	var resps []string
+	var responses []string
 	for id, request := range task.callbacks {
 		sb.WriteString("var " + id + " = API." + request.method)
 		sb.WriteString("({")
@@ -139,17 +139,15 @@ func (task *task) code() string {
 		sb.WriteString("});\n")
 
 		s := "\"" + id + "\":" + id
-		resps = append(resps, s)
+		responses = append(responses, s)
 	}
 
-	sb.WriteString("return {")
-	sb.WriteString(strings.Join(resps, ","))
-	sb.WriteString("};")
+	sb.WriteString("return {" + strings.Join(responses, ",") + "};")
 	s := sb.String()
-
 	if task.debug {
 		log.Printf("task: code: \n%s\n", s)
 	}
+
 	return s
 }
 
