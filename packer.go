@@ -1,6 +1,7 @@
 package packer
 
 import (
+	"context"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -90,7 +91,7 @@ func New(vk *api.VK, opts ...Option) *Packer {
 		opt(p)
 	}
 
-	go p.worker()
+	go p.worker(context.Background())
 	return p
 }
 
@@ -147,11 +148,13 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 	return resp, err
 }
 
-func (p *Packer) worker() {
+func (p *Packer) worker(ctx context.Context) {
 	batch := newBatch(p.execute, p.debug)
 	requestsCount := 0
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case req := <-p.requests:
 			batch.appendRequest(req)
 			requestsCount++
