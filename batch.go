@@ -6,7 +6,6 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"github.com/SevereCloud/vksdk/api"
@@ -30,9 +29,7 @@ type request struct {
 type batch struct {
 	requestID uint64
 	callbacks map[string]request
-	mtx       sync.RWMutex
 	execute   func(code string) (packedExecuteResponse, error)
-	state     batchState
 	debug     bool
 }
 
@@ -45,33 +42,16 @@ func newBatch(exec func(code string) (packedExecuteResponse, error), debug bool)
 	return &batch{
 		callbacks: make(map[string]request),
 		execute:   exec,
-		state:     preparing,
 		debug:     debug,
 	}
 }
 
-func (b *batch) Request(method string, params api.Params, handler func(r api.Response, e error)) {
-	if atomic.LoadUint64(&b.state) == sending {
-		panic("batch: request called in sending batch")
-	}
-
-	b.mtx.Lock()
-	defer b.mtx.Unlock()
+func (b *batch) appendRequest(req request) {
 	requestID := b.createRequestID()
-	b.callbacks[requestID] = request{
-		method:  method,
-		params:  params,
-		handler: handler,
-	}
+	b.callbacks[requestID] = req
 }
 
 func (b *batch) Flush() {
-	if atomic.LoadUint64(&b.state) == sending {
-		return
-	}
-	atomic.StoreUint64(&b.state, sending)
-	b.mtx.Lock()
-	defer b.mtx.Unlock()
 	if err := b.flush(); err != nil {
 		for _, info := range b.callbacks {
 			info.handler(api.Response{}, err)
@@ -109,13 +89,6 @@ func (b *batch) flush() error {
 	}
 
 	return nil
-}
-
-// Count returns count of requests in batch
-func (b *batch) Count() int {
-	b.mtx.RLock()
-	defer b.mtx.RUnlock()
-	return len(b.callbacks)
 }
 
 func (b *batch) code() string {

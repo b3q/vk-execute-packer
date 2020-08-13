@@ -3,6 +3,7 @@ package packer
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/SevereCloud/vksdk/api"
@@ -20,16 +21,16 @@ const (
 
 // Packer struct
 type Packer struct {
-	lastFlushTime     time.Time
+	lastFlushTimeUnix int64
 	maxPackedRequests int
 	tokenPool         *tokenPool
 	tokenLazyLoading  bool
 	filterMode        FilterMode
 	filterMethods     map[string]struct{}
-	mtx               sync.RWMutex
 	debug             bool
 	handler           func(string, api.Params) (api.Response, error)
-	currentBatch      *batch
+	requests          chan request
+	forceFlush        chan struct{}
 }
 
 // Option func
@@ -75,26 +76,26 @@ func New(vk *api.VK, opts ...Option) *Packer {
 	p := &Packer{
 		tokenLazyLoading:  true,
 		tokenPool:         newTokenPool(),
-		lastFlushTime:     time.Now(),
+		lastFlushTimeUnix: time.Now().Unix(),
 		maxPackedRequests: 25,
 		filterMode:        Ignore,
 		filterMethods:     make(map[string]struct{}),
 		handler:           vk.Handler,
+		requests:          make(chan request, 10),
+		forceFlush:        make(chan struct{}),
 	}
 
 	for _, opt := range opts {
 		opt(p)
 	}
-
-	p.currentBatch = newBatch(p.execute, p.debug)
-
+	go p.worker()
 	return p
 }
 
 // Default func
 func Default(vk *api.VK, opts ...Option) {
 	p := New(vk, opts...)
-	go TimeoutTrigger(time.Second, p)
+	go TimeoutTrigger(time.Second*2, p)
 	vk.Handler = p.Handler
 }
 
@@ -128,7 +129,6 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 		p.tokenPool.append(token)
 	}
 
-	p.mtx.RLock()
 	var (
 		resp api.Response
 		err  error
@@ -140,35 +140,48 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 		err = e
 		wg.Done()
 	}
-
-	p.currentBatch.Request(method, params, handler)
-	needFlush := p.currentBatch.Count() == p.maxPackedRequests
-	p.mtx.RUnlock()
-
-	if needFlush {
-		p.Flush()
-	}
-
+	p.requests <- request{method, params, handler}
 	wg.Wait()
 	return resp, err
 }
 
+func (p *Packer) worker() {
+	batch := newBatch(p.execute, p.debug)
+	requestsCount := 0
+	for {
+		select {
+		case req := <-p.requests:
+			batch.appendRequest(req)
+			requestsCount++
+			if requestsCount == p.maxPackedRequests {
+				if p.debug {
+					log.Println("packer: sending batch...")
+				}
+				go batch.Flush()
+				batch = newBatch(p.execute, p.debug)
+				requestsCount = 0
+			}
+		case <-p.forceFlush:
+			if len(batch.callbacks) == 0 {
+				continue
+			}
+			if p.debug {
+				log.Println("packer: forced sending batch...")
+			}
+			go batch.Flush()
+			batch = newBatch(p.execute, p.debug)
+			requestsCount = 0
+		}
+	}
+}
+
 // Flush func
 func (p *Packer) Flush() {
-	if p.debug {
-		log.Println("packer: flushing...")
-	}
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-
-	p.currentBatch.Flush()
-	p.currentBatch = newBatch(p.execute, p.debug)
-	p.lastFlushTime = time.Now()
+	p.forceFlush <- struct{}{}
+	atomic.StoreInt64(&p.lastFlushTimeUnix, time.Now().Unix())
 }
 
 // LastFlushTime fn
 func (p *Packer) LastFlushTime() time.Time {
-	p.mtx.RLock()
-	defer p.mtx.RUnlock()
-	return p.lastFlushTime
+	return time.Unix(atomic.LoadInt64(&p.lastFlushTimeUnix), 0)
 }
