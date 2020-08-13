@@ -1,12 +1,7 @@
 package packer
 
 import (
-	"bytes"
-	"encoding/json"
-	"io/ioutil"
 	"log"
-	"net/http"
-	"net/url"
 
 	"github.com/SevereCloud/vksdk/api"
 	"github.com/SevereCloud/vksdk/api/errors"
@@ -24,39 +19,18 @@ type packedMethodResponse struct {
 	Body []byte
 }
 
-func (p *Packer) execute(token, code string) (packedExecuteResponse, error) {
-	u := api.APIMethodURL + "execute"
-	query := &url.Values{}
-	query.Set("access_token", token)
-	query.Set("v", api.Version)
-	query.Set("code", code)
-	req, err := http.NewRequest(http.MethodPost, u, bytes.NewBufferString(query.Encode()))
+func (p *Packer) execute(code string) (packedExecuteResponse, error) {
+	apiResp, err := p.handler("execute", api.Params{
+		"access_token": p.tokenPool.get(),
+		"v":            api.Version,
+		"code":         code,
+	})
 	if err != nil {
 		return packedExecuteResponse{}, err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return packedExecuteResponse{}, err
-	}
-	defer resp.Body.Close()
-
-	var apiResp api.Response
-	if p.debug {
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return packedExecuteResponse{}, err
-		}
-
-		log.Printf("packer: code: \n%s\n", code)
-		log.Printf("packer: response: \n%s\n", bodyBytes)
-		if err := json.Unmarshal(bodyBytes, &apiResp); err != nil {
-			return packedExecuteResponse{}, err
-		}
-	} else {
-		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-			return packedExecuteResponse{}, err
-		}
+	if p.debug{
+		log.Printf("packer: execute response: \n%s\n", apiResp.Response)
 	}
 
 	if err := errors.New(apiResp.Error); err != nil {

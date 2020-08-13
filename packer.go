@@ -1,36 +1,35 @@
 package packer
 
 import (
-	"bytes"
-	"fmt"
 	"log"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/SevereCloud/vksdk/api"
-	"github.com/SevereCloud/vksdk/api/errors"
-	"github.com/SevereCloud/vksdk/object"
 )
 
-type request struct {
-	method  string
-	params  api.Params
-	handler func(api.Response, error)
-}
+// FilterMode ...
+type FilterMode bool
+
+const (
+	// Allow mode
+	Allow FilterMode = true
+	// Ignore mode
+	Ignore FilterMode = false
+)
 
 // Packer struct
 type Packer struct {
 	lastFlushTime     time.Time
-	flushTimeout      time.Duration
 	maxPackedRequests int
-	tokens            chan string
-	requestID         int
-	handlers          map[string]request
-	blockList         map[string]struct{}
-	mtx               sync.Mutex
+	tokenPool         *tokenPool
+	tokenLazyLoading  bool
+	filterMode        FilterMode
+	filterMethods     map[string]struct{}
+	mtx               sync.RWMutex
 	debug             bool
+	handler           func(string, api.Params) (api.Response, error)
+	currentTask       *task
 }
 
 // Option func
@@ -46,18 +45,12 @@ func MaxPackedRequests(max int) Option {
 	}
 }
 
-// Timeout opt
-func Timeout(dur time.Duration) Option {
-	return func(p *Packer) {
-		p.flushTimeout = dur
-	}
-}
-
-// Ignore opt
-func Ignore(methods ...string) Option {
+// Rules opt
+func Rules(mode FilterMode, methods ...string) Option {
 	return func(p *Packer) {
 		for _, m := range methods {
-			p.blockList[m] = struct{}{}
+			p.filterMode = mode
+			p.filterMethods[m] = struct{}{}
 		}
 	}
 }
@@ -69,30 +62,44 @@ func Debug() Option {
 	}
 }
 
-// New ...
-func New(tokens []string, opts ...Option) *Packer {
-	tchan := make(chan string, len(tokens))
-	for _, tok := range tokens {
-		tchan <- tok
+// Tokens opt
+func Tokens(tokens ...string) Option {
+	return func(p *Packer) {
+		p.tokenLazyLoading = false
+		p.tokenPool = newTokenPool(tokens...)
 	}
+}
 
+// NewPacker ...
+func NewPacker(vk *api.VK, flusher Flusher, opts ...Option) *Packer {
 	p := &Packer{
+		tokenLazyLoading:  true,
+		tokenPool:         newTokenPool(),
 		lastFlushTime:     time.Now(),
-		flushTimeout:      time.Second * 2,
 		maxPackedRequests: 25,
-		handlers:          make(map[string]request),
-		tokens:            tchan,
-		blockList: map[string]struct{}{
-			"execute": {},
-		},
+		filterMode:        Ignore,
+		filterMethods:     make(map[string]struct{}),
+		handler:           vk.Handler,
 	}
 
 	for _, opt := range opts {
 		opt(p)
 	}
-	go p.flushMon()
+
+	p.currentTask = newTask(p.execute, p.debug)
+	go flusher(p)
 
 	return p
+}
+
+// Default func
+func Default(vk *api.VK, opts ...Option) {
+	p := NewPacker(
+		vk,
+		TimeoutBasedFlusher(time.Second*1),
+		opts...,
+	)
+	vk.Handler = p.Handler
 }
 
 // Handler func
@@ -100,34 +107,47 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 	if p.debug {
 		log.Printf("packer: Handler call (%s)\n", method)
 	}
-	if _, ok := p.blockList[method]; ok {
 
+	if method == "execute" {
+		return p.handler(method, params)
 	}
+
+	_, found := p.filterMethods[method]
+	if (p.filterMode == Allow && !found) ||
+		(p.filterMode == Ignore && found) {
+		return p.handler(method, params)
+	}
+
+	if p.tokenLazyLoading {
+		tokenIface, ok := params["access_token"]
+		if !ok {
+			panic("packer: missing access_token param")
+		}
+
+		token, ok := tokenIface.(string)
+		if !ok {
+			panic("packer: bad access_token type")
+		}
+
+		p.tokenPool.append(token)
+	}
+
+	p.mtx.RLock()
 	var (
 		resp api.Response
 		err  error
 		wg   sync.WaitGroup
 	)
 	wg.Add(1)
-
-	p.mtx.Lock()
-	requestID := p.requestID
-	p.requestID++
-
 	handler := func(r api.Response, e error) {
 		resp = r
 		err = e
 		wg.Done()
 	}
 
-	p.handlers["resp"+strconv.Itoa(requestID)] = request{
-		method:  method,
-		params:  params,
-		handler: handler,
-	}
-
-	needFlush := len(p.handlers) == p.maxPackedRequests
-	p.mtx.Unlock()
+	p.currentTask.Request(method, params, handler)
+	needFlush := p.currentTask.Len() == p.maxPackedRequests
+	p.mtx.RUnlock()
 
 	if needFlush {
 		p.Flush()
@@ -143,126 +163,16 @@ func (p *Packer) Flush() {
 		log.Println("packer: flushing...")
 	}
 	p.mtx.Lock()
-	defer func() {
-		p.handlers = make(map[string]request)
-		p.requestID = 0
-		p.lastFlushTime = time.Now()
-		p.mtx.Unlock()
-	}()
+	defer p.mtx.Unlock()
 
-	if err := p.flush(); err != nil {
-		for _, info := range p.handlers {
-			info.handler(api.Response{}, err)
-		}
-	}
+	p.currentTask.Flush()
+	p.currentTask = newTask(p.execute, p.debug)
+	p.lastFlushTime = time.Now()
 }
 
-func (p *Packer) flush() error {
-	packedResp, err := p.execute(p.getToken(), p.requestsToCode())
-	if err != nil {
-		return err
-	}
-
-	failedRequestIndex := 0
-	for _, resp := range packedResp.Responses {
-		info, ok := p.handlers[resp.Key]
-		if !ok {
-			panic(fmt.Sprintf("packer: handler for method %s not registered", info.method))
-		}
-
-		var err error
-		// если результат false
-		if bytes.Compare(resp.Body, []byte{0x66, 0x61, 0x6c, 0x73, 0x65}) == 0 {
-			e := packedResp.Errors[failedRequestIndex]
-			err = errors.New(executeErrorToMethodError(info, e))
-			failedRequestIndex++
-		}
-
-		if p.debug {
-			log.Printf("packer: call handler: %s, (resp: %s, err: %s)\n", info.method, resp.Body, err)
-		}
-		info.handler(api.Response{
-			Response: resp.Body,
-		}, err)
-		delete(p.handlers, resp.Key)
-	}
-
-	return nil
-}
-
-func (p *Packer) flushMon() {
-	for {
-		time.Sleep(p.flushTimeout)
-		p.mtx.Lock()
-		nextFlushTime := p.lastFlushTime.Add(p.flushTimeout)
-		p.mtx.Unlock()
-		if time.Now().After(nextFlushTime) {
-			if p.debug {
-				log.Println("packer: flushMon: timeout")
-			}
-			p.Flush()
-			continue
-		}
-
-		if p.debug {
-			log.Println("packer: flushMon: skipping")
-		}
-	}
-}
-
-func (p *Packer) getToken() string {
-	token := <-p.tokens
-	p.tokens <- token
-	return token
-}
-
-func (p *Packer) requestsToCode() string {
-	var sb strings.Builder
-	requestIndex := 0
-	for _, request := range p.handlers {
-		sb.WriteString("var resp" + strconv.Itoa(requestIndex) + " = API." + request.method)
-		sb.WriteString("({")
-		var params []string
-		for name, value := range request.params {
-			var fmted string
-			if s, ok := value.(string); ok {
-				fmted = `"` + s + `"`
-			} else {
-				fmted = api.FmtValue(value, 0)
-			}
-
-			s := "\"" + name + "\":" + fmted
-			params = append(params, s)
-		}
-		sb.WriteString(strings.Join(params, ","))
-		sb.WriteString("});\n")
-		requestIndex++
-	}
-
-	sb.WriteString("return {")
-	var resps []string
-	for i := 0; i < requestIndex; i++ {
-		s := "\"resp" + strconv.Itoa(i) + "\":" + "resp" + strconv.Itoa(i)
-		resps = append(resps, s)
-	}
-
-	sb.WriteString(strings.Join(resps, ","))
-	sb.WriteString("};")
-	return sb.String()
-}
-
-func executeErrorToMethodError(req request, err object.ExecuteError) object.Error {
-	params := make([]object.BaseRequestParam, len(req.params))
-	for key, value := range req.params {
-		params = append(params, object.BaseRequestParam{
-			Key:   key,
-			Value: api.FmtValue(value, 0),
-		})
-	}
-
-	return object.Error{
-		Message:       err.ErrorMsg,
-		Code:          err.ErrorCode,
-		RequestParams: params,
-	}
+// LastFlushTime fn
+func (p *Packer) LastFlushTime() time.Time {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+	return p.lastFlushTime
 }

@@ -4,7 +4,6 @@ import (
 	"os"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/SevereCloud/vksdk/api"
 	packer "github.com/b3q/vk-execute-packer"
@@ -14,8 +13,7 @@ import (
 func TestMain(t *testing.T) {
 	token := os.Getenv("TOKEN")
 	vk := api.NewVK(token)
-	vk.Handler = packer.New([]string{token}, packer.Debug()).Handler
-
+	packer.Default(vk, packer.Debug())
 	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
@@ -36,6 +34,5 @@ func TestMain(t *testing.T) {
 		_, err := vk.AccountGetInfo(nil)
 		assert.Nil(t, err)
 	}()
-	time.Sleep(1 * time.Second)
 	wg.Wait()
 }

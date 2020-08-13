@@ -1,13 +1,3 @@
-# vk-execute-packer (WIP)
-
-Пакер запросов для либы [vksdk](https://github.com/SevereCloud/vksdk)
-
-```
-go get github.com/b3q/vk-execute-packer
-```
-
-### Пример
-```go
 package main
 
 import (
@@ -23,7 +13,6 @@ func main() {
 	token := os.Getenv("TOKEN")
 	vk := api.NewVK(token)
 	packer.Default(vk, packer.Debug())
-
 	resp, err := vk.UtilsResolveScreenName(
 		params.NewUtilsResolveScreenNameBuilder().
 			ScreenName("durov").Params,
@@ -34,4 +23,3 @@ func main() {
 
 	fmt.Println("durov id:", resp.ObjectID)
 }
-```
