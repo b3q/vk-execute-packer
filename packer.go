@@ -22,7 +22,7 @@ const (
 
 // Packer struct
 type Packer struct {
-	lastFlushTimeUnix int64
+	lastSendTimeUnix  int64
 	maxPackedRequests int
 	tokenPool         *tokenPool
 	tokenLazyLoading  bool
@@ -85,7 +85,7 @@ func New(vk *api.VK, opts ...Option) *Packer {
 	p := &Packer{
 		tokenLazyLoading:  true,
 		tokenPool:         newTokenPool(),
-		lastFlushTimeUnix: time.Now().Unix(),
+		lastSendTimeUnix:  time.Now().Unix(),
 		maxPackedRequests: 25,
 		filterMode:        Ignore,
 		filterMethods:     make(map[string]struct{}),
@@ -160,6 +160,13 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 func (p *Packer) worker(ctx context.Context) {
 	batch := newBatch(p.execute, p.debug)
 	requestsCount := 0
+
+	send := func() {
+		go batch.Send()
+		batch = newBatch(p.execute, p.debug)
+		requestsCount = 0
+		atomic.StoreInt64(&p.lastSendTimeUnix, time.Now().Unix())
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -171,9 +178,7 @@ func (p *Packer) worker(ctx context.Context) {
 				if p.debug {
 					log.Println("packer: sending batch...")
 				}
-				go batch.Send()
-				batch = newBatch(p.execute, p.debug)
-				requestsCount = 0
+				send()
 			}
 		case <-p.forceSend:
 			if requestsCount == 0 {
@@ -182,9 +187,7 @@ func (p *Packer) worker(ctx context.Context) {
 			if p.debug {
 				log.Println("packer: forced sending batch...")
 			}
-			go batch.Send()
-			batch = newBatch(p.execute, p.debug)
-			requestsCount = 0
+			send()
 		}
 	}
 }
@@ -192,10 +195,9 @@ func (p *Packer) worker(ctx context.Context) {
 // Send triggers to send current batch.
 func (p *Packer) Send() {
 	p.forceSend <- struct{}{}
-	atomic.StoreInt64(&p.lastFlushTimeUnix, time.Now().Unix())
 }
 
 // LastSendTime returns time of last sent batch.
 func (p *Packer) LastSendTime() time.Time {
-	return time.Unix(atomic.LoadInt64(&p.lastFlushTimeUnix), 0)
+	return time.Unix(atomic.LoadInt64(&p.lastSendTimeUnix), 0)
 }
