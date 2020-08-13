@@ -1,4 +1,7 @@
 # vk-execute-packer (WIP)
+[![Documentation](https://pkg.go.dev/badge/github.com/cqln/vk-execute-packer)](https://pkg.go.dev/github.com/cqln/vk-execute-packer?tab=doc)
+[![Go Report Card](https://goreportcard.com/badge/github.com/cqln/vk-execute-packer)](https://goreportcard.com/report/github.com/cqln/vk-execute-packer)
+[![license](https://img.shields.io/github/license/cqln/vk-execute-packer.svg)](https://github.com/cqln/vk-execute-packer/blob/master/LICENSE)
 
 Пакер запросов для либы [vksdk](https://github.com/SevereCloud/vksdk)
 
