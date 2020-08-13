@@ -1,6 +1,8 @@
 package packer
 
 import (
+	"log"
+
 	"github.com/SevereCloud/vksdk/api"
 	"github.com/SevereCloud/vksdk/api/errors"
 	"github.com/SevereCloud/vksdk/object"
@@ -25,6 +27,10 @@ func (p *Packer) execute(code string) (packedExecuteResponse, error) {
 	})
 	if err != nil {
 		return packedExecuteResponse{}, err
+	}
+
+	if p.debug{
+		log.Printf("packer: execute response: \n%s\n", apiResp.Response)
 	}
 
 	if err := errors.New(apiResp.Error); err != nil {
