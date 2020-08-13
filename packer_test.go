@@ -9,20 +9,21 @@ import (
 )
 
 func TestExecutionCode(t *testing.T) {
-	vk := api.NewVK("foo")
-	p := NewPacker(vk, TimeoutBasedFlusher(time.Second*1))
-	go p.Handler("Account.getInfo", api.Params{
+	task := newTask(func(code string) (packedExecuteResponse, error) {
+		return packedExecuteResponse{}, nil
+	}, true)
+	go task.Request("Account.getInfo", api.Params{
 		"bar": 123,
-	})
+	}, nil)
 	time.Sleep(1 * time.Second)
-	go p.Handler("Account.setInfo", api.Params{
+	go task.Request("Account.setInfo", api.Params{
 		"bar": "abcdef",
-	})
+	}, nil)
 	time.Sleep(1 * time.Second)
 	expected := "" +
 		`var resp0 = API.Account.getInfo({"bar":123});` + "\n" +
 		`var resp1 = API.Account.setInfo({"bar":"abcdef"});` + "\n" +
 		`return {"resp0":resp0,"resp1":resp1};`
 
-	assert.Equal(t, expected, p.requestsToCode())
+	assert.Equal(t, expected, task.code())
 }

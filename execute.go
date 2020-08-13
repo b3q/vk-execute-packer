@@ -17,9 +17,9 @@ type packedMethodResponse struct {
 	Body []byte
 }
 
-func (p *Packer) execute(token, code string) (packedExecuteResponse, error) {
+func (p *Packer) execute(code string) (packedExecuteResponse, error) {
 	apiResp, err := p.handler("execute", api.Params{
-		"access_token": token,
+		"access_token": p.tokenPool.get(),
 		"v":            api.Version,
 		"code":         code,
 	})
