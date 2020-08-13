@@ -14,11 +14,11 @@ import (
 	"github.com/SevereCloud/vksdk/object"
 )
 
-type taskState = uint64
+type batchState = uint64
 
 const (
-	filling taskState = iota
-	working
+	preparing batchState = iota
+	sending
 )
 
 type request struct {
@@ -27,69 +27,69 @@ type request struct {
 	handler func(api.Response, error)
 }
 
-type task struct {
+type batch struct {
 	requestID uint64
 	callbacks map[string]request
 	mtx       sync.RWMutex
 	execute   func(code string) (packedExecuteResponse, error)
-	state     taskState
+	state     batchState
 	debug     bool
 }
 
-func (task *task) createRequestID() string {
-	reqID := atomic.AddUint64(&task.requestID, 1)
+func (b *batch) createRequestID() string {
+	reqID := atomic.AddUint64(&b.requestID, 1)
 	return "req" + strconv.FormatUint(reqID, 10)
 }
 
-func newTask(exec func(code string) (packedExecuteResponse, error), debug bool) *task {
-	return &task{
+func newBatch(exec func(code string) (packedExecuteResponse, error), debug bool) *batch {
+	return &batch{
 		callbacks: make(map[string]request),
 		execute:   exec,
-		state:     filling,
+		state:     preparing,
 		debug:     debug,
 	}
 }
 
-func (task *task) Request(method string, params api.Params, handler func(r api.Response, e error)) {
-	if atomic.LoadUint64(&task.state) == working {
-		panic("task: request called in working task")
+func (b *batch) Request(method string, params api.Params, handler func(r api.Response, e error)) {
+	if atomic.LoadUint64(&b.state) == sending {
+		panic("batch: request called in sending batch")
 	}
 
-	task.mtx.Lock()
-	defer task.mtx.Unlock()
-	requestID := task.createRequestID()
-	task.callbacks[requestID] = request{
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	requestID := b.createRequestID()
+	b.callbacks[requestID] = request{
 		method:  method,
 		params:  params,
 		handler: handler,
 	}
 }
 
-func (task *task) Flush() {
-	if atomic.LoadUint64(&task.state) == working {
+func (b *batch) Flush() {
+	if atomic.LoadUint64(&b.state) == sending {
 		return
 	}
-	atomic.StoreUint64(&task.state, working)
-	task.mtx.Lock()
-	defer task.mtx.Unlock()
-	if err := task.flush(); err != nil {
-		for _, info := range task.callbacks {
+	atomic.StoreUint64(&b.state, sending)
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	if err := b.flush(); err != nil {
+		for _, info := range b.callbacks {
 			info.handler(api.Response{}, err)
 		}
 	}
 }
 
-func (task *task) flush() error {
-	packedResp, err := task.execute(task.code())
+func (b *batch) flush() error {
+	packedResp, err := b.execute(b.code())
 	if err != nil {
 		return err
 	}
 
 	failedRequestIndex := 0
 	for _, resp := range packedResp.Responses {
-		info, ok := task.callbacks[resp.Key]
+		info, ok := b.callbacks[resp.Key]
 		if !ok {
-			panic(fmt.Sprintf("packer: task: handler for method %s not registered", info.method))
+			panic(fmt.Sprintf("packer: batch: handler for method %s not registered", info.method))
 		}
 
 		var err error
@@ -99,28 +99,29 @@ func (task *task) flush() error {
 			failedRequestIndex++
 		}
 
-		if task.debug {
-			log.Printf("packer: task: call handler %s (method %s): resp: %s, err: %s\n", resp.Key, info.method, resp.Body, err)
+		if b.debug {
+			log.Printf("packer: batch: call handler %s (method %s): resp: %s, err: %s\n", resp.Key, info.method, resp.Body, err)
 		}
 		info.handler(api.Response{
 			Response: resp.Body,
 		}, err)
-		delete(task.callbacks, resp.Key)
+		delete(b.callbacks, resp.Key)
 	}
 
 	return nil
 }
 
-func (task *task) Len() int {
-	task.mtx.RLock()
-	defer task.mtx.RUnlock()
-	return len(task.callbacks)
+// Count returns count of requests in batch
+func (b *batch) Count() int {
+	b.mtx.RLock()
+	defer b.mtx.RUnlock()
+	return len(b.callbacks)
 }
 
-func (task *task) code() string {
+func (b *batch) code() string {
 	var sb strings.Builder
 	var responses []string
-	for id, request := range task.callbacks {
+	for id, request := range b.callbacks {
 		sb.WriteString("var " + id + " = API." + request.method)
 		sb.WriteString("({")
 		var params []string
@@ -144,8 +145,8 @@ func (task *task) code() string {
 
 	sb.WriteString("return {" + strings.Join(responses, ",") + "};")
 	s := sb.String()
-	if task.debug {
-		log.Printf("task: code: \n%s\n", s)
+	if b.debug {
+		log.Printf("batch: code: \n%s\n", s)
 	}
 
 	return s

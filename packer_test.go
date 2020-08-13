@@ -9,14 +9,14 @@ import (
 )
 
 func TestExecutionCode(t *testing.T) {
-	task := newTask(func(code string) (packedExecuteResponse, error) {
+	b := newBatch(func(code string) (packedExecuteResponse, error) {
 		return packedExecuteResponse{}, nil
 	}, true)
-	go task.Request("Account.getInfo", api.Params{
+	go b.Request("Account.getInfo", api.Params{
 		"bar": 123,
 	}, nil)
 	time.Sleep(1 * time.Second)
-	go task.Request("Account.setInfo", api.Params{
+	go b.Request("Account.setInfo", api.Params{
 		"bar": "abcdef",
 	}, nil)
 	time.Sleep(1 * time.Second)
@@ -25,5 +25,5 @@ func TestExecutionCode(t *testing.T) {
 		`var resp1 = API.Account.setInfo({"bar":"abcdef"});` + "\n" +
 		`return {"resp0":resp0,"resp1":resp1};`
 
-	assert.Equal(t, expected, task.code())
+	assert.Equal(t, expected, b.code())
 }

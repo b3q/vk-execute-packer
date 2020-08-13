@@ -29,7 +29,7 @@ type Packer struct {
 	mtx               sync.RWMutex
 	debug             bool
 	handler           func(string, api.Params) (api.Response, error)
-	currentTask       *task
+	currentBatch      *batch
 }
 
 // Option func
@@ -86,7 +86,7 @@ func New(vk *api.VK, opts ...Option) *Packer {
 		opt(p)
 	}
 
-	p.currentTask = newTask(p.execute, p.debug)
+	p.currentBatch = newBatch(p.execute, p.debug)
 
 	return p
 }
@@ -141,8 +141,8 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 		wg.Done()
 	}
 
-	p.currentTask.Request(method, params, handler)
-	needFlush := p.currentTask.Len() == p.maxPackedRequests
+	p.currentBatch.Request(method, params, handler)
+	needFlush := p.currentBatch.Count() == p.maxPackedRequests
 	p.mtx.RUnlock()
 
 	if needFlush {
@@ -161,8 +161,8 @@ func (p *Packer) Flush() {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
-	p.currentTask.Flush()
-	p.currentTask = newTask(p.execute, p.debug)
+	p.currentBatch.Flush()
+	p.currentBatch = newBatch(p.execute, p.debug)
 	p.lastFlushTime = time.Now()
 }
 
