@@ -13,13 +13,6 @@ import (
 	"github.com/SevereCloud/vksdk/object"
 )
 
-type batchState = uint64
-
-const (
-	preparing batchState = iota
-	sending
-)
-
 type request struct {
 	method  string
 	params  api.Params
