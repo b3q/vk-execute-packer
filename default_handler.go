@@ -25,11 +25,13 @@ type defaultHandler struct {
 	rpscheck    map[string]ratelimit.Limiter
 	mapLock     sync.Mutex
 	client      *http.Client
+	userAgent   string
 	debug       bool
 }
 
 func newDefaultHandler(rpsPerToken int) *defaultHandler {
 	return &defaultHandler{
+		userAgent:   "vksdk",
 		rpsPerToken: rpsPerToken,
 		rpscheck:    make(map[string]ratelimit.Limiter),
 		client: &http.Client{
@@ -75,7 +77,7 @@ retry:
 	if err != nil {
 		return apiResp, err
 	}
-	req.Header.Set("User-Agent", "boo")
+	req.Header.Set("User-Agent", def.userAgent)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := def.client.Do(req)
