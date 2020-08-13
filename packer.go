@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,7 +32,6 @@ const (
 
 // Packer struct
 type Packer struct {
-	flushTimeout      time.Duration
 	lastFlushTime     time.Time
 	maxPackedRequests int
 	tokenPool         *tokenPool
@@ -42,10 +40,9 @@ type Packer struct {
 	handlers          map[string]request
 	filterMode        FilterMode
 	filterMethods     map[string]struct{}
-	mtx               sync.Mutex
+	mtx               sync.RWMutex
 	debug             bool
-	defaultHandler    *defaultHandler
-	stop              chan struct{}
+	handler           func(string, api.Params) (api.Response, error)
 }
 
 // Option func
@@ -58,13 +55,6 @@ func MaxPackedRequests(max int) Option {
 	}
 	return func(p *Packer) {
 		p.maxPackedRequests = max
-	}
-}
-
-// Timeout opt
-func Timeout(dur time.Duration) Option {
-	return func(p *Packer) {
-		p.flushTimeout = dur
 	}
 }
 
@@ -82,7 +72,6 @@ func Rules(mode FilterMode, methods ...string) Option {
 func Debug() Option {
 	return func(p *Packer) {
 		p.debug = true
-		p.defaultHandler.debug = true
 	}
 }
 
@@ -94,49 +83,38 @@ func Tokens(tokens ...string) Option {
 	}
 }
 
-// HTTPClient opt
-func HTTPClient(client *http.Client) Option {
-	return func(p *Packer) {
-		p.defaultHandler.client = client
-	}
-}
-
-// RPSPerToken opt
-func RPSPerToken(rps int) Option {
-	return func(p *Packer) {
-		p.defaultHandler = newDefaultHandler(rps)
-	}
-}
-
 // NewPacker ...
-func NewPacker(opts ...Option) *Packer {
+func NewPacker(vk *api.VK, flusher Flusher, opts ...Option) *Packer {
 	p := &Packer{
 		tokenLazyLoading:  true,
 		tokenPool:         newTokenPool(),
 		lastFlushTime:     time.Now(),
-		flushTimeout:      time.Second * 2,
 		maxPackedRequests: 25,
 		handlers:          make(map[string]request),
 		filterMode:        Ignore,
 		filterMethods: map[string]struct{}{
 			"execute": {},
 		},
-		defaultHandler: newDefaultHandler(api.LimitGroupToken),
-		stop:           make(chan struct{}),
+		handler: vk.Handler,
 	}
 
 	for _, opt := range opts {
 		opt(p)
 	}
-	go p.flushMon()
+
+	go flusher(p)
 
 	return p
 }
 
-// New ...
-func New(opts ...Option) func(method string, params api.Params) (api.Response, error) {
-	p := NewPacker(opts...)
-	return p.Handler
+// Default func
+func Default(vk *api.VK, opts ...Option) {
+	p := NewPacker(
+		vk,
+		TimeoutBasedFlusher(time.Second*1),
+		opts...,
+	)
+	vk.Handler = p.Handler
 }
 
 // Handler func
@@ -146,10 +124,13 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 	}
 
 	{
+		if method == "execute" {
+			return p.handler(method, params)
+		}
 		_, found := p.filterMethods[method]
 		if (p.filterMode == Allow && !found) ||
 			(p.filterMode == Ignore && found) {
-			return p.defaultHandler.Handle(method, params)
+			return p.handler(method, params)
 		}
 	}
 
@@ -253,30 +234,11 @@ func (p *Packer) flush() error {
 	return nil
 }
 
-func (p *Packer) flushMon() {
-	for {
-		time.Sleep(p.flushTimeout)
-		p.mtx.Lock()
-		nextFlushTime := p.lastFlushTime.Add(p.flushTimeout)
-		p.mtx.Unlock()
-		if time.Now().After(nextFlushTime) {
-			if p.debug {
-				log.Println("packer: flushMon: timeout")
-			}
-			p.Flush()
-			continue
-		}
-
-		if p.debug {
-			log.Println("packer: flushMon: skipping")
-		}
-		select {
-		case <-p.stop:
-			p.defaultHandler.Close()
-			return
-		default:
-		}
-	}
+// LastFlushTime fn
+func (p *Packer) LastFlushTime() time.Time {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+	return p.lastFlushTime
 }
 
 func (p *Packer) requestsToCode() string {
@@ -333,8 +295,4 @@ func executeErrorToMethodError(req request, err object.ExecuteError) object.Erro
 		Code:          err.ErrorCode,
 		RequestParams: params,
 	}
-}
-
-func (p *Packer) Close() {
-
 }

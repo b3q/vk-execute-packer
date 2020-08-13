@@ -18,7 +18,7 @@ type packedMethodResponse struct {
 }
 
 func (p *Packer) execute(token, code string) (packedExecuteResponse, error) {
-	apiResp, err := p.defaultHandler.Handle("execute", api.Params{
+	apiResp, err := p.handler("execute", api.Params{
 		"access_token": token,
 		"v":            api.Version,
 		"code":         code,

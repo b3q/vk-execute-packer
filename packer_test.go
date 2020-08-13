@@ -9,7 +9,8 @@ import (
 )
 
 func TestExecutionCode(t *testing.T) {
-	p := NewPacker()
+	vk := api.NewVK("foo")
+	p := NewPacker(vk, TimeoutBasedFlusher(time.Second*1))
 	go p.Handler("Account.getInfo", api.Params{
 		"bar": 123,
 	})

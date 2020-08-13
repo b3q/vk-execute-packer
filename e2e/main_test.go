@@ -13,7 +13,7 @@ import (
 func TestMain(t *testing.T) {
 	token := os.Getenv("TOKEN")
 	vk := api.NewVK(token)
-	vk.Handler = packer.New(packer.Debug())
+	packer.Default(vk, packer.Debug())
 	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
