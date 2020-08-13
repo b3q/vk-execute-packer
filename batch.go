@@ -66,7 +66,7 @@ func (b *batch) flush() error {
 		}
 
 		var err error
-		if bytes.Compare(resp.Body, []byte("false")) == 0 {
+		if bytes.Equal(resp.Body, []byte("false")) {
 			e := packedResp.Errors[failedRequestIndex]
 			err = errors.New(executeErrorToMethodError(info, e))
 			failedRequestIndex++

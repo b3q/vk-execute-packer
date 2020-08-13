@@ -1,8 +1,6 @@
 package packer
 
-import (
-	"sync"
-)
+import "sync"
 
 type tokenPool struct {
 	tmap   map[string]struct{}
@@ -39,7 +37,6 @@ func (tp *tokenPool) append(token string) {
 
 	tp.tmap[token] = struct{}{}
 	tp.tokens = newChan
-	return
 }
 
 func (tp *tokenPool) get() string {
@@ -48,10 +45,4 @@ func (tp *tokenPool) get() string {
 	token := <-tp.tokens
 	tp.tokens <- token
 	return token
-}
-
-func (tp *tokenPool) len() int {
-	tp.mtx.RLock()
-	defer tp.mtx.RUnlock()
-	return len(tp.tmap)
 }
