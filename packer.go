@@ -84,10 +84,12 @@ func New(vk *api.VK, opts ...Option) *Packer {
 		requests:          make(chan request, 10),
 		forceFlush:        make(chan struct{}),
 	}
+	vk.Handler = p.Handler
 
 	for _, opt := range opts {
 		opt(p)
 	}
+
 	go p.worker()
 	return p
 }
@@ -162,7 +164,7 @@ func (p *Packer) worker() {
 				requestsCount = 0
 			}
 		case <-p.forceFlush:
-			if len(batch.callbacks) == 0 {
+			if requestsCount == 0 {
 				continue
 			}
 			if p.debug {
