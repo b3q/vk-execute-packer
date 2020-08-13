@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -13,7 +14,8 @@ import (
 func TestMain(t *testing.T) {
 	token := os.Getenv("TOKEN")
 	vk := api.NewVK(token)
-	packer.Default(vk, packer.Debug())
+	vk.Limit = api.LimitUserToken
+	packer.Default(vk)
 	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
