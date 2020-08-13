@@ -10,8 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestLargeAPICalls(t *testing.T) {
-	token := os.Getenv("TOKEN")
+func TestManyAPICalls(t *testing.T) {
+	token := os.Getenv("USER_TOKEN")
+	if token == "" {
+		t.Skip("USER_TOKEN empty")
+	}
+
 	vk := api.NewVK(token)
 	vk.Limit = api.LimitUserToken
 	packer.Default(vk)
