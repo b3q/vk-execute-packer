@@ -17,27 +17,42 @@ import (
 	"go.uber.org/ratelimit"
 )
 
-// кол-во ретраев на запрос при TooMany
-const tooManyMaxAttempts = 3
+const (
+	// кол-во ретраев на запрос при TooMany
+	tooManyMaxAttempts = 3
+	// время хранения инфы о лимитах неиспользуемого токена
+	tokenTTL = time.Minute * 1
+	// периодичность проверки ttl токенов
+	eraseCheckDuration = time.Minute * 5
+)
+
+type tokenInfo struct {
+	lastUsed time.Time
+	limiter  ratelimit.Limiter
+}
 
 type defaultHandler struct {
 	rpsPerToken int
-	rpscheck    map[string]ratelimit.Limiter
+	rpscheck    map[string]tokenInfo
 	mapLock     sync.Mutex
 	client      *http.Client
 	userAgent   string
 	debug       bool
+	stop        chan struct{}
 }
 
 func newDefaultHandler(rpsPerToken int) *defaultHandler {
-	return &defaultHandler{
+	d := &defaultHandler{
 		userAgent:   "vksdk",
 		rpsPerToken: rpsPerToken,
-		rpscheck:    make(map[string]ratelimit.Limiter),
+		rpscheck:    make(map[string]tokenInfo),
 		client: &http.Client{
 			Timeout: time.Second * 10,
 		},
 	}
+
+	go d.eraser()
+	return d
 }
 
 func (def *defaultHandler) Handle(method string, params api.Params) (api.Response, error) {
@@ -61,11 +76,15 @@ func (def *defaultHandler) Handle(method string, params api.Params) (api.Respons
 		}
 
 		def.mapLock.Lock()
-		limiter, ok = def.rpscheck[tok]
+		info, ok := def.rpscheck[tok]
 		if !ok {
-			limiter = ratelimit.New(def.rpsPerToken)
-			def.rpscheck[tok] = limiter
+			info = tokenInfo{
+				limiter: ratelimit.New(def.rpsPerToken),
+			}
 		}
+		info.lastUsed = time.Now()
+		limiter = info.limiter
+		def.rpscheck[tok] = info
 		def.mapLock.Unlock()
 	}
 
@@ -115,5 +134,31 @@ retry:
 	}
 
 	return apiResp, nil
+}
 
+func (def *defaultHandler) eraser() {
+	for {
+		time.Sleep(eraseCheckDuration)
+		select {
+		case <-def.stop:
+			return
+		default:
+			def.eraseUnusedTokens()
+		}
+	}
+}
+
+func (def *defaultHandler) eraseUnusedTokens() {
+	def.mapLock.Lock()
+	defer def.mapLock.Unlock()
+	t := time.Now()
+	for token, info := range def.rpscheck {
+		if t.After(info.lastUsed.Add(tokenTTL)) {
+			delete(def.rpscheck, token)
+		}
+	}
+}
+
+func (def *defaultHandler) Close() {
+	def.stop <- struct{}{}
 }
