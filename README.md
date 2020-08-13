@@ -3,7 +3,7 @@
 Пакер запросов для либы [vksdk](https://github.com/SevereCloud/vksdk)
 
 ```
-go get github.com/b3q/vk-execute-packer
+go get github.com/cqln/vk-execute-packer
 ```
 
 ### Пример
@@ -16,7 +16,7 @@ import (
 
 	"github.com/SevereCloud/vksdk/api"
 	"github.com/SevereCloud/vksdk/api/params"
-	packer "github.com/b3q/vk-execute-packer"
+	packer "github.com/cqln/vk-execute-packer"
 )
 
 func main() {

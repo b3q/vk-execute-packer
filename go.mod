@@ -1,4 +1,4 @@
-module github.com/b3q/vk-execute-packer
+module github.com/cqln/vk-execute-packer
 
 go 1.14
 
