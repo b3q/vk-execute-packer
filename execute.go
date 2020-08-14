@@ -4,7 +4,6 @@ import (
 	"log"
 
 	"github.com/SevereCloud/vksdk/api"
-	"github.com/SevereCloud/vksdk/api/errors"
 	"github.com/SevereCloud/vksdk/object"
 	"github.com/tidwall/gjson"
 )
@@ -31,10 +30,6 @@ func (p *Packer) execute(code string) (packedExecuteResponse, error) {
 
 	if p.debug {
 		log.Printf("packer: execute response: \n%s\n", apiResp.Response)
-	}
-
-	if err := errors.New(apiResp.Error); err != nil {
-		return packedExecuteResponse{}, err
 	}
 
 	packedResp := packedExecuteResponse{
