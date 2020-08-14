@@ -2,11 +2,11 @@ package packer
 
 import "time"
 
-// TimeoutTrigger ...
-func TimeoutTrigger(timeout time.Duration, p *Packer) {
+// TimeoutTrigger calls packer.Send() method with a given interval.
+func TimeoutTrigger(interval time.Duration, p *Packer) {
 	for {
-		time.Sleep(timeout)
-		nextSendTime := p.LastSendTime().Add(timeout)
+		time.Sleep(interval)
+		nextSendTime := p.LastSendTime().Add(interval)
 		if time.Now().After(nextSendTime) {
 			p.Send()
 		}

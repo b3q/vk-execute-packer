@@ -80,7 +80,7 @@ func Tokens(tokens ...string) Option {
 // which means that the batch will be sent only when the number of requests in it
 // equals to 'maxPackedRequests' (default 25, can be overwritten with MaxPackedRequests() option).
 // You will need to use TimeoutTrigger or create your custom trigger
-// which calls packer.Send() method to solve this behavior.
+// which calls packer.Send() method to solve this.
 func New(vk *api.VK, opts ...Option) *Packer {
 	p := &Packer{
 		tokenLazyLoading:  true,
