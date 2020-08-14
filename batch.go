@@ -14,14 +14,14 @@ import (
 )
 
 type request struct {
-	method  string
-	params  api.Params
-	handler func(api.Response, error)
+	method   string
+	params   api.Params
+	callback func(api.Response, error)
 }
 
 type batch struct {
 	requestID uint64
-	callbacks map[string]request
+	requests  map[string]request
 	execute   func(code string) (packedExecuteResponse, error)
 	debug     bool
 }
@@ -33,21 +33,21 @@ func (b *batch) createRequestID() string {
 
 func newBatch(exec func(code string) (packedExecuteResponse, error), debug bool) *batch {
 	return &batch{
-		callbacks: make(map[string]request),
-		execute:   exec,
-		debug:     debug,
+		requests: make(map[string]request),
+		execute:  exec,
+		debug:    debug,
 	}
 }
 
 func (b *batch) appendRequest(req request) {
 	requestID := b.createRequestID()
-	b.callbacks[requestID] = req
+	b.requests[requestID] = req
 }
 
 func (b *batch) Send() {
 	if err := b.send(); err != nil {
-		for _, info := range b.callbacks {
-			info.handler(api.Response{}, err)
+		for _, request := range b.requests {
+			request.callback(api.Response{}, err)
 		}
 	}
 }
@@ -60,25 +60,29 @@ func (b *batch) send() error {
 
 	failedRequestIndex := 0
 	for _, resp := range packedResp.Responses {
-		info, ok := b.callbacks[resp.Key]
+		request, ok := b.requests[resp.Key]
 		if !ok {
-			panic(fmt.Sprintf("packer: batch: handler for method %s not registered", info.method))
+			panic(fmt.Sprintf("packer: batch: handler %s (method %s) not registered", resp.Key, request.method))
 		}
 
-		var err error
+		var (
+			err     error
+			apiResp api.Response
+		)
+		apiResp.Response = resp.Body
 		if bytes.Equal(resp.Body, []byte("false")) {
-			e := packedResp.Errors[failedRequestIndex]
-			err = errors.New(executeErrorToMethodError(info, e))
+			methodErr := executeErrorToMethodError(request, packedResp.Errors[failedRequestIndex])
+			apiResp.Error = methodErr
+			err = errors.New(methodErr)
 			failedRequestIndex++
 		}
 
 		if b.debug {
-			log.Printf("packer: batch: call handler %s (method %s): resp: %s, err: %s\n", resp.Key, info.method, resp.Body, err)
+			log.Printf("packer: batch: call handler %s (method %s): resp: %s, err: %s\n", resp.Key, request.method, resp.Body, err)
 		}
-		info.handler(api.Response{
-			Response: resp.Body,
-		}, err)
-		delete(b.callbacks, resp.Key)
+
+		request.callback(apiResp, err)
+		delete(b.requests, resp.Key)
 	}
 
 	return nil
@@ -87,7 +91,7 @@ func (b *batch) send() error {
 func (b *batch) code() string {
 	var sb strings.Builder
 	var responses []string
-	for id, request := range b.callbacks {
+	for id, request := range b.requests {
 		sb.WriteString("var " + id + " = API." + request.method)
 		sb.WriteString("({")
 		var params []string
