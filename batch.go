@@ -89,6 +89,14 @@ func (b *batch) send() error {
 		delete(b.requests, resp.Key)
 	}
 
+	if len(b.requests) > 0 {
+		err := fmt.Errorf("packer: no response")
+		for _, req := range b.requests {
+			req.callback(api.Response{}, err)
+		}
+		b.requests = nil
+	}
+
 	return nil
 }
 
