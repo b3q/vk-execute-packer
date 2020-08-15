@@ -116,7 +116,7 @@ func (b *batch) code() string {
 	sb.WriteString("return {" + strings.Join(responses, ",") + "};")
 	s := sb.String()
 	if b.debug {
-		log.Printf("batch: code: \n%s\n", s)
+		log.Printf("packer: batch: code: \n%s\n", s)
 	}
 
 	return s
