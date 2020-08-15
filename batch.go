@@ -31,6 +31,10 @@ func (b *batch) createRequestID() string {
 	return "req" + strconv.FormatUint(reqID, 10)
 }
 
+func (b *batch) Count() uint64 {
+	return atomic.LoadUint64(&b.requestID)
+}
+
 func newBatch(exec func(code string) (packedExecuteResponse, error), debug bool) *batch {
 	return &batch{
 		requests: make(map[string]request),
@@ -39,7 +43,7 @@ func newBatch(exec func(code string) (packedExecuteResponse, error), debug bool)
 	}
 }
 
-func (b *batch) appendRequest(req request) {
+func (b *batch) AppendRequest(req request) {
 	requestID := b.createRequestID()
 	b.requests[requestID] = req
 }

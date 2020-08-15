@@ -1,7 +1,6 @@
 package packer
 
 import (
-	"context"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -30,8 +29,8 @@ type Packer struct {
 	filterMethods     map[string]struct{}
 	debug             bool
 	handler           func(string, api.Params) (api.Response, error)
-	requests          chan request
-	forceSend         chan struct{}
+	currentBatch      *batch
+	mtx               sync.Mutex
 }
 
 // Option - Packer option
@@ -90,16 +89,13 @@ func New(vk *api.VK, opts ...Option) *Packer {
 		filterMode:        Ignore,
 		filterMethods:     make(map[string]struct{}),
 		handler:           vk.Handler,
-		requests:          make(chan request, 10),
-		forceSend:         make(chan struct{}),
 	}
+	p.currentBatch = newBatch(p.execute, p.debug)
 	vk.Handler = p.Handler
-
 	for _, opt := range opts {
 		opt(p)
 	}
 
-	go p.worker(context.Background())
 	return p
 }
 
@@ -108,7 +104,6 @@ func New(vk *api.VK, opts ...Option) *Packer {
 func Default(vk *api.VK, opts ...Option) {
 	p := New(vk, opts...)
 	go TimeoutTrigger(time.Second*2, p)
-	vk.Handler = p.Handler
 }
 
 // Handler implements vk.Handler function, which proceeds requests to VK API.
@@ -152,49 +147,27 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 		err = e
 		wg.Done()
 	}
-	p.requests <- request{method, params, handler}
+
+	p.mtx.Lock()
+	p.currentBatch.AppendRequest(request{method, params, handler})
+	if p.currentBatch.Count() == uint64(p.maxPackedRequests) {
+		go p.currentBatch.Send()
+		p.currentBatch = newBatch(p.execute, p.debug)
+	}
+	p.mtx.Unlock()
+
 	wg.Wait()
 	return resp, err
 }
 
-func (p *Packer) worker(ctx context.Context) {
-	batch := newBatch(p.execute, p.debug)
-	requestsCount := 0
-
-	send := func() {
-		go batch.Send()
-		batch = newBatch(p.execute, p.debug)
-		requestsCount = 0
-		atomic.StoreInt64(&p.lastSendTimeUnix, time.Now().Unix())
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case req := <-p.requests:
-			batch.appendRequest(req)
-			requestsCount++
-			if requestsCount == p.maxPackedRequests {
-				if p.debug {
-					log.Println("packer: sending batch...")
-				}
-				send()
-			}
-		case <-p.forceSend:
-			if requestsCount == 0 {
-				continue
-			}
-			if p.debug {
-				log.Println("packer: forced sending batch...")
-			}
-			send()
-		}
-	}
-}
-
 // Send triggers to send current batch.
 func (p *Packer) Send() {
-	p.forceSend <- struct{}{}
+	p.mtx.Lock()
+	if p.currentBatch.Count() > 0 {
+		go p.currentBatch.Send()
+		p.currentBatch = newBatch(p.execute, p.debug)
+	}
+	p.mtx.Unlock()
 }
 
 // LastSendTime returns time of last sent batch.
