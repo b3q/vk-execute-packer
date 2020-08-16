@@ -63,18 +63,18 @@ func (b *batch) send() error {
 	}
 
 	failedRequestIndex := 0
-	for _, resp := range packedResp.Responses {
-		request, ok := b.requests[resp.Key]
+	for name, body := range packedResp.Responses {
+		request, ok := b.requests[name]
 		if !ok {
-			panic(fmt.Sprintf("packer: batch: handler %s (method %s) not registered", resp.Key, request.method))
+			panic(fmt.Sprintf("packer: batch: handler %s (method %s) not registered", name, request.method))
 		}
 
 		var (
 			err     error
 			apiResp api.Response
 		)
-		apiResp.Response = resp.Body
-		if bytes.Equal(resp.Body, []byte("false")) {
+		apiResp.Response = body
+		if bytes.Equal(body, []byte("false")) {
 			methodErr := executeErrorToMethodError(request, packedResp.Errors[failedRequestIndex])
 			apiResp.Error = methodErr
 			err = errors.New(methodErr)
@@ -82,11 +82,11 @@ func (b *batch) send() error {
 		}
 
 		if b.debug {
-			log.Printf("packer: batch: call handler %s (method %s): resp: %s, err: %s\n", resp.Key, request.method, resp.Body, err)
+			log.Printf("packer: batch: call handler %s (method %s): resp: %s, err: %s\n", name, request.method, body, err)
 		}
 
 		request.callback(apiResp, err)
-		delete(b.requests, resp.Key)
+		delete(b.requests, name)
 	}
 
 	if len(b.requests) > 0 {

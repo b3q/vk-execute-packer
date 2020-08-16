@@ -1,15 +1,15 @@
 package packer
 
 import (
+	"encoding/json"
 	"log"
 
 	"github.com/SevereCloud/vksdk/api"
 	"github.com/SevereCloud/vksdk/object"
-	"github.com/tidwall/gjson"
 )
 
 type packedExecuteResponse struct {
-	Responses []packedMethodResponse
+	Responses map[string]json.RawMessage
 	Errors    []object.ExecuteError
 }
 
@@ -33,16 +33,13 @@ func (p *Packer) execute(code string) (packedExecuteResponse, error) {
 	}
 
 	packedResp := packedExecuteResponse{
-		Errors: apiResp.ExecuteErrors,
+		Responses: make(map[string]json.RawMessage),
+		Errors:    apiResp.ExecuteErrors,
 	}
 
-	gjson.ParseBytes(apiResp.Response).ForEach(func(key, value gjson.Result) bool {
-		packedResp.Responses = append(packedResp.Responses, packedMethodResponse{
-			Key:  key.String(),
-			Body: []byte(value.Raw),
-		})
-		return true
-	})
+	if err := json.Unmarshal(apiResp.Response, &packedResp.Responses); err != nil {
+		return packedResp, err
+	}
 
 	return packedResp, nil
 }
