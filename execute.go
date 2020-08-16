@@ -19,7 +19,7 @@ type packedMethodResponse struct {
 }
 
 func (p *Packer) execute(code string) (packedExecuteResponse, error) {
-	apiResp, err := p.handler("execute", api.Params{
+	resp, err := p.vkHandler("execute", api.Params{
 		"access_token": p.tokenPool.get(),
 		"v":            api.Version,
 		"code":         code,
@@ -29,17 +29,17 @@ func (p *Packer) execute(code string) (packedExecuteResponse, error) {
 	}
 
 	if p.debug {
-		log.Printf("packer: execute: response: \n%s\n", apiResp.Response)
+		log.Printf("packer: execute: response: \n%s\n", resp.Response)
 	}
 
-	packedResp := packedExecuteResponse{
+	packed := packedExecuteResponse{
 		Responses: make(map[string]json.RawMessage),
-		Errors:    apiResp.ExecuteErrors,
+		Errors:    resp.ExecuteErrors,
 	}
 
-	if err := json.Unmarshal(apiResp.Response, &packedResp.Responses); err != nil {
-		return packedResp, err
+	if err := json.Unmarshal(resp.Response, &packed.Responses); err != nil {
+		return packed, err
 	}
 
-	return packedResp, nil
+	return packed, nil
 }

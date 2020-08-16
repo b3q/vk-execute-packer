@@ -9,6 +9,9 @@ import (
 	"github.com/SevereCloud/vksdk/api"
 )
 
+// VKHandler - alias to function which proceeds requests to VK API.
+type VKHandler = func(string, api.Params) (api.Response, error)
+
 // FilterMode - batch filter mode
 type FilterMode bool
 
@@ -27,7 +30,7 @@ type Packer struct {
 	filterMode        FilterMode
 	filterMethods     map[string]struct{}
 	debug             bool
-	handler           func(string, api.Params) (api.Response, error)
+	vkHandler         VKHandler
 	batch             batch
 	mtx               sync.Mutex
 }
@@ -72,24 +75,21 @@ func Tokens(tokens ...string) Option {
 }
 
 // New creates a new Packer.
-// Also automatically wraps vk.Handler with their own (for batching requests).
 //
 // NOTE: this method will not create any trigger for sending batches
 // which means that the batch will be sent only when the number of requests in it
 // equals to 'maxPackedRequests' (default 25, can be overwritten with MaxPackedRequests() option).
-// You will need to use TimeoutTrigger or create your custom trigger
-// which calls packer.Send() method to solve this.
-func New(vk *api.VK, opts ...Option) *Packer {
+// You will need to create your custom logic which sometimes will call packer.Send() method to solve this.
+func New(handler VKHandler, opts ...Option) *Packer {
 	p := &Packer{
 		tokenLazyLoading:  true,
 		tokenPool:         newTokenPool(),
 		maxPackedRequests: 25,
 		filterMode:        Ignore,
 		filterMethods:     make(map[string]struct{}),
-		handler:           vk.Handler,
+		vkHandler:         handler,
 		batch:             make(batch),
 	}
-	vk.Handler = p.Handler
 	for _, opt := range opts {
 		opt(p)
 	}
@@ -100,7 +100,8 @@ func New(vk *api.VK, opts ...Option) *Packer {
 // Default creates new Packer, wraps vk.Handler and creates
 // timeout-based trigger for sending batches every 2 seconds.
 func Default(vk *api.VK, opts ...Option) {
-	p := New(vk, opts...)
+	p := New(vk.Handler, opts...)
+	vk.Handler = p.Handler
 	go func() {
 		time.Sleep(time.Second * 2)
 		p.Send()
@@ -114,13 +115,13 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 	}
 
 	if method == "execute" {
-		return p.handler(method, params)
+		return p.vkHandler(method, params)
 	}
 
 	_, found := p.filterMethods[method]
 	if (p.filterMode == Allow && !found) ||
 		(p.filterMode == Ignore && found) {
-		return p.handler(method, params)
+		return p.vkHandler(method, params)
 	}
 
 	if p.tokenLazyLoading {
@@ -162,7 +163,7 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 	return resp, err
 }
 
-// Send triggers to send current batch.
+// Send sends current batch if it contains at least one request.
 func (p *Packer) Send() {
 	p.mtx.Lock()
 	if len(p.batch) > 0 {
