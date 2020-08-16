@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/SevereCloud/vksdk/api"
@@ -18,6 +19,10 @@ type request struct {
 }
 
 type batch map[string]request
+
+func (b batch) appendRequest(req request) {
+	b["req"+strconv.Itoa(len(b))] = req
+}
 
 func (b batch) code() string {
 	var sb strings.Builder

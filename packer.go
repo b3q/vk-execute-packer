@@ -2,7 +2,6 @@ package packer
 
 import (
 	"log"
-	"strconv"
 	"sync"
 	"time"
 
@@ -152,7 +151,7 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 	}
 
 	p.mtx.Lock()
-	p.batch["req"+strconv.Itoa(len(p.batch))] = request{method, params, handler}
+	p.batch.appendRequest(request{method, params, handler})
 	if len(p.batch) == p.maxPackedRequests {
 		go p.sendBatch(p.batch)
 		p.batch = make(batch)
