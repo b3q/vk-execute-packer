@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"strconv"
 	"strings"
 
 	"github.com/SevereCloud/vksdk/api"
@@ -18,90 +17,12 @@ type request struct {
 	callback func(api.Response, error)
 }
 
-type batch struct {
-	requestsNum int
-	requests    map[string]request
-	execute     func(code string) (packedExecuteResponse, error)
-	debug       bool
-}
+type batch map[string]request
 
-func (b *batch) createRequestID() string {
-	b.requestsNum++
-	return "req" + strconv.Itoa(b.requestsNum)
-}
-
-func (b *batch) Count() int {
-	return b.requestsNum
-}
-
-func newBatch(exec func(code string) (packedExecuteResponse, error), debug bool) *batch {
-	return &batch{
-		requests: make(map[string]request),
-		execute:  exec,
-		debug:    debug,
-	}
-}
-
-func (b *batch) AppendRequest(req request) {
-	requestID := b.createRequestID()
-	b.requests[requestID] = req
-}
-
-func (b *batch) Send() {
-	if err := b.send(); err != nil {
-		for _, request := range b.requests {
-			request.callback(api.Response{}, err)
-		}
-	}
-}
-
-func (b *batch) send() error {
-	pack, err := b.execute(b.code())
-	if err != nil {
-		return err
-	}
-
-	failedRequestIndex := 0
-	for name, body := range pack.Responses {
-		request, ok := b.requests[name]
-		if !ok {
-			panic(fmt.Sprintf("packer: batch: handler %s (method %s) not registered", name, request.method))
-		}
-
-		var err error
-		methodResponse := api.Response{
-			Response: body,
-		}
-		if bytes.Equal(body, []byte("false")) {
-			methodErr := executeErrorToMethodError(request, pack.Errors[failedRequestIndex])
-			methodResponse.Error = methodErr
-			err = errors.New(methodErr)
-			failedRequestIndex++
-		}
-
-		if b.debug {
-			log.Printf("packer: batch: call handler %s (method %s): resp: %s, err: %s\n", name, request.method, body, err)
-		}
-
-		request.callback(methodResponse, err)
-		delete(b.requests, name)
-	}
-
-	if len(b.requests) > 0 {
-		err := fmt.Errorf("packer: no response")
-		for _, req := range b.requests {
-			req.callback(api.Response{}, err)
-		}
-		b.requests = nil
-	}
-
-	return nil
-}
-
-func (b *batch) code() string {
+func (b batch) code() string {
 	var sb strings.Builder
 	var responses []string
-	for id, request := range b.requests {
+	for id, request := range b {
 		sb.WriteString("var " + id + " = API." + request.method)
 		sb.WriteString("({")
 		var params []string
@@ -124,12 +45,58 @@ func (b *batch) code() string {
 	}
 
 	sb.WriteString("return {" + strings.Join(responses, ",") + "};")
-	s := sb.String()
-	if b.debug {
-		log.Printf("packer: batch: code: \n%s\n", s)
+	return sb.String()
+}
+
+func (p *Packer) sendBatch(bat batch) {
+	if err := p.trySendBatch(bat); err != nil {
+		for _, request := range bat {
+			request.callback(api.Response{}, err)
+		}
+	}
+}
+
+func (p *Packer) trySendBatch(bat batch) error {
+	pack, err := p.execute(bat.code())
+	if err != nil {
+		return err
 	}
 
-	return s
+	failedRequestIndex := 0
+	for name, body := range pack.Responses {
+		request, ok := bat[name]
+		if !ok {
+			panic(fmt.Sprintf("packer: batch: handler %s (method %s) not registered", name, request.method))
+		}
+
+		var err error
+		methodResponse := api.Response{
+			Response: body,
+		}
+		if bytes.Equal(body, []byte("false")) {
+			methodErr := executeErrorToMethodError(request, pack.Errors[failedRequestIndex])
+			methodResponse.Error = methodErr
+			err = errors.New(methodErr)
+			failedRequestIndex++
+		}
+
+		if p.debug {
+			log.Printf("packer: batch: call handler %s (method %s): resp: %s, err: %s\n", name, request.method, body, err)
+		}
+
+		request.callback(methodResponse, err)
+		delete(bat, name)
+	}
+
+	if len(bat) > 0 {
+		err := fmt.Errorf("packer: no response")
+		for _, req := range bat {
+			req.callback(api.Response{}, err)
+		}
+		bat = nil
+	}
+
+	return nil
 }
 
 func executeErrorToMethodError(req request, err object.ExecuteError) object.Error {

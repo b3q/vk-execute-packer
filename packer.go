@@ -2,6 +2,7 @@ package packer
 
 import (
 	"log"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,7 +30,7 @@ type Packer struct {
 	filterMethods     map[string]struct{}
 	debug             bool
 	handler           func(string, api.Params) (api.Response, error)
-	currentBatch      *batch
+	batch             batch
 	mtx               sync.Mutex
 }
 
@@ -89,8 +90,8 @@ func New(vk *api.VK, opts ...Option) *Packer {
 		filterMode:        Ignore,
 		filterMethods:     make(map[string]struct{}),
 		handler:           vk.Handler,
+		batch:             make(batch),
 	}
-	p.currentBatch = newBatch(p.execute, p.debug)
 	vk.Handler = p.Handler
 	for _, opt := range opts {
 		opt(p)
@@ -142,6 +143,7 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 		wg   sync.WaitGroup
 	)
 	wg.Add(1)
+
 	handler := func(r api.Response, e error) {
 		resp = r
 		err = e
@@ -149,10 +151,10 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 	}
 
 	p.mtx.Lock()
-	p.currentBatch.AppendRequest(request{method, params, handler})
-	if p.currentBatch.Count() == p.maxPackedRequests {
-		go p.currentBatch.Send()
-		p.currentBatch = newBatch(p.execute, p.debug)
+	p.batch["req"+strconv.Itoa(len(p.batch))] = request{method, params, handler}
+	if len(p.batch) == p.maxPackedRequests {
+		go p.sendBatch(p.batch)
+		p.batch = make(batch)
 	}
 	p.mtx.Unlock()
 
@@ -163,9 +165,9 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 // Send triggers to send current batch.
 func (p *Packer) Send() {
 	p.mtx.Lock()
-	if p.currentBatch.Count() > 0 {
-		go p.currentBatch.Send()
-		p.currentBatch = newBatch(p.execute, p.debug)
+	if len(p.batch) > 0 {
+		go p.sendBatch(p.batch)
+		p.batch = make(batch)
 	}
 	p.mtx.Unlock()
 }
