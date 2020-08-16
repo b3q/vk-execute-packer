@@ -71,7 +71,10 @@ func (p *Packer) trySendBatch(bat batch) error {
 	for name, body := range pack.Responses {
 		request, ok := bat[name]
 		if !ok {
-			panic(fmt.Sprintf("packer: batch: handler %s (method %s) not registered", name, request.method))
+			if p.debug {
+				log.Printf("packer: batch: handler %s not registered\n", name)
+			}
+			continue
 		}
 
 		var err error

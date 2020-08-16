@@ -46,3 +46,9 @@ func (tp *tokenPool) get() string {
 	tp.tokens <- token
 	return token
 }
+
+func (tp *tokenPool) Len() int {
+	tp.mtx.RLock()
+	defer tp.mtx.RUnlock()
+	return len(tp.tmap)
+}

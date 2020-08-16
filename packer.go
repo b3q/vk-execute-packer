@@ -1,6 +1,7 @@
 package packer
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -125,13 +126,13 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 
 	if p.tokenLazyLoading {
 		tokenIface, ok := params["access_token"]
-		if !ok {
-			panic("packer: missing access_token param")
+		if !ok && p.tokenPool.Len() == 0 {
+			return api.Response{}, fmt.Errorf("packer: missing access_token param")
 		}
 
 		token, ok := tokenIface.(string)
-		if !ok {
-			panic("packer: bad access_token type")
+		if !ok && p.tokenPool.Len() == 0 {
+			return api.Response{}, fmt.Errorf("packer: bad access_token type")
 		}
 
 		p.tokenPool.append(token)
@@ -142,8 +143,8 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 		err  error
 		wg   sync.WaitGroup
 	)
-	wg.Add(1)
 
+	wg.Add(1)
 	handler := func(r api.Response, e error) {
 		resp = r
 		err = e
