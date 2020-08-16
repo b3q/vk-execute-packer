@@ -4,7 +4,6 @@ import (
 	"log"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/SevereCloud/vksdk/api"
@@ -22,7 +21,6 @@ const (
 
 // Packer struct
 type Packer struct {
-	lastSendTimeUnix  int64
 	maxPackedRequests int
 	tokenPool         *tokenPool
 	tokenLazyLoading  bool
@@ -85,7 +83,6 @@ func New(vk *api.VK, opts ...Option) *Packer {
 	p := &Packer{
 		tokenLazyLoading:  true,
 		tokenPool:         newTokenPool(),
-		lastSendTimeUnix:  time.Now().Unix(),
 		maxPackedRequests: 25,
 		filterMode:        Ignore,
 		filterMethods:     make(map[string]struct{}),
@@ -104,7 +101,10 @@ func New(vk *api.VK, opts ...Option) *Packer {
 // timeout-based trigger for sending batches every 2 seconds.
 func Default(vk *api.VK, opts ...Option) {
 	p := New(vk, opts...)
-	go TimeoutTrigger(time.Second*2, p)
+	go func() {
+		time.Sleep(time.Second * 2)
+		p.Send()
+	}()
 }
 
 // Handler implements vk.Handler function, which proceeds requests to VK API.
@@ -170,9 +170,4 @@ func (p *Packer) Send() {
 		p.batch = make(batch)
 	}
 	p.mtx.Unlock()
-}
-
-// LastSendTime returns time of last sent batch.
-func (p *Packer) LastSendTime() time.Time {
-	return time.Unix(atomic.LoadInt64(&p.lastSendTimeUnix), 0)
 }
