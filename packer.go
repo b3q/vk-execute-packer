@@ -150,7 +150,7 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 
 	p.mtx.Lock()
 	p.currentBatch.AppendRequest(request{method, params, handler})
-	if p.currentBatch.Count() == uint64(p.maxPackedRequests) {
+	if p.currentBatch.Count() == p.maxPackedRequests {
 		go p.currentBatch.Send()
 		p.currentBatch = newBatch(p.execute, p.debug)
 	}

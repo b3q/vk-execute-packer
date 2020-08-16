@@ -6,7 +6,6 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	"sync/atomic"
 
 	"github.com/SevereCloud/vksdk/api"
 	"github.com/SevereCloud/vksdk/api/errors"
@@ -20,19 +19,19 @@ type request struct {
 }
 
 type batch struct {
-	requestID uint64
-	requests  map[string]request
-	execute   func(code string) (packedExecuteResponse, error)
-	debug     bool
+	requestsNum int
+	requests    map[string]request
+	execute     func(code string) (packedExecuteResponse, error)
+	debug       bool
 }
 
 func (b *batch) createRequestID() string {
-	reqID := atomic.AddUint64(&b.requestID, 1)
-	return "req" + strconv.FormatUint(reqID, 10)
+	b.requestsNum++
+	return "req" + strconv.Itoa(b.requestsNum)
 }
 
-func (b *batch) Count() uint64 {
-	return atomic.LoadUint64(&b.requestID)
+func (b *batch) Count() int {
+	return b.requestsNum
 }
 
 func newBatch(exec func(code string) (packedExecuteResponse, error), debug bool) *batch {
