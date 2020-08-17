@@ -1,4 +1,4 @@
-module github.com/cqln/vk-execute-packer
+module github.com/zerobounty/vk-execute-packer
 
 go 1.14
 
