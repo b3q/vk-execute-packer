@@ -48,11 +48,11 @@ func main() {
  - `packer.Rules(mode, methods...)` устанавливает правила фильтрации методов\
  Пример:
  ```go
-// батчить только Groups.getMembers и Board.getTopics
-packer.Default(vk, packer.Rules(packer.Allow,  "Groups.getMembers", "Board.getTopics"))
+// батчить только messages.send и messages.edit
+packer.Default(vk, packer.Rules(packer.Allow, "messages.send", "messages.edit"))
 
-// батчить все методы кроме Messages.send и Account.ban
-packer.Default(vk, packer.Rules(packer.Ignore,  "Messages.send", "Account.ban"))
+// батчить все методы кроме groups.getMembers и board.getTopics
+packer.Default(vk, packer.Rules(packer.Ignore, "groups.getMembers", "board.getTopics"))
 
-// P.S. метод Execute всегда выполняется отдельно
+// P.S. метод execute всегда выполняется отдельно
  ```
