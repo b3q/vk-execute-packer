@@ -21,35 +21,29 @@ type request struct {
 type batch map[string]request
 
 func (b batch) appendRequest(req request) {
-	b["req"+strconv.Itoa(len(b))] = req
+	b["r"+strconv.Itoa(len(b))] = req
 }
 
 func (b batch) code() string {
 	var sb strings.Builder
-	var responses []string
+	sb.WriteString("return {")
 	for id, request := range b {
-		sb.WriteString("var " + id + " = API." + request.method)
-		sb.WriteString("({")
-		var params []string
+		sb.WriteString(`"` + id + `":API.` + request.method + "({")
 		for name, value := range request.params {
-			var fmted string
-			if s, ok := value.(string); ok {
-				fmted = `"` + s + `"`
-			} else {
-				fmted = api.FmtValue(value, 0)
+			if name == "access_token" {
+				continue
 			}
-
-			s := "\"" + name + "\":" + fmted
-			params = append(params, s)
+			valueString := ""
+			if s, ok := value.(string); ok {
+				valueString = `"` + s + `"`
+			} else {
+				valueString = api.FmtValue(value, 0)
+			}
+			sb.WriteString(`"` + name + `":` + valueString + ",")
 		}
-		sb.WriteString(strings.Join(params, ","))
-		sb.WriteString("});\n")
-
-		s := "\"" + id + "\":" + id
-		responses = append(responses, s)
+		sb.WriteString("}),")
 	}
-
-	sb.WriteString("return {" + strings.Join(responses, ",") + "};")
+	sb.WriteString("};")
 	return sb.String()
 }
 
@@ -62,7 +56,12 @@ func (p *Packer) sendBatch(bat batch) {
 }
 
 func (p *Packer) trySendBatch(bat batch) error {
-	pack, err := p.execute(bat.code())
+	code := bat.code()
+	if p.debug {
+		log.Printf("packer: batch: code: \n%s\n", code)
+	}
+
+	pack, err := p.execute(code)
 	if err != nil {
 		return err
 	}
