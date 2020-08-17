@@ -103,8 +103,10 @@ func Default(vk *api.VK, opts ...Option) {
 	p := New(vk.Handler, opts...)
 	vk.Handler = p.Handler
 	go func() {
-		time.Sleep(time.Second * 2)
-		p.Send()
+		for {
+			time.Sleep(time.Second * 2)
+			p.Send()
+		}
 	}()
 }
 
