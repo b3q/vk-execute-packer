@@ -13,11 +13,6 @@ type packedExecuteResponse struct {
 	Errors    []object.ExecuteError
 }
 
-type packedMethodResponse struct {
-	Key  string
-	Body []byte
-}
-
 func (p *Packer) execute(code string) (packedExecuteResponse, error) {
 	resp, err := p.vkHandler("execute", api.Params{
 		"access_token": p.tokenPool.get(),
