@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/SevereCloud/vksdk/api"
-	packer "github.com/zerobounty/vk-execute-packer"
 	"github.com/stretchr/testify/assert"
+	packer "github.com/zerobounty/vk-execute-packer"
 )
 
 func TestManyAPICalls(t *testing.T) {
