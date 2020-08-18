@@ -137,7 +137,7 @@ func (p *Packer) Handler(method string, params api.Params) (api.Response, error)
 			return api.Response{}, fmt.Errorf("packer: bad access_token type")
 		}
 
-		p.tokenPool.append(token)
+		p.tokenPool.Append(token)
 	}
 
 	var (
