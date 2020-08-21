@@ -47,8 +47,51 @@ func (b batch) code() string {
 	return sb.String()
 }
 
+func (b batch) forEach(iter func(request)) {
+	keys := make([]string, 0, len(b))
+	for key := range b {
+		keys = append(keys, key)
+	}
+
+	for _, key := range keys {
+		req := b[key]
+		iter(req)
+	}
+}
+
+func (b batch) split(num int) []batch {
+	requestsPerBatch := len(b) / num
+	batches := make([]batch, len(b)/requestsPerBatch)
+
+	index := 0
+	count := 0
+	b.forEach(func(r request) {
+		tmp := batches[index]
+		if tmp == nil {
+			tmp = make(batch)
+		}
+
+		tmp.appendRequest(r)
+		count++
+		if count == requestsPerBatch {
+			index++
+			count = 0
+		}
+	})
+
+	return batches
+}
+
 func (p *Packer) sendBatch(bat batch) {
-	if err := p.trySendBatch(bat); err != nil {
+	err := p.trySendBatch(bat)
+	if err.Error() == "response size is too big" {
+		for _, splitBatch := range bat.split(2) {
+			go p.sendBatch(splitBatch)
+		}
+		return
+	}
+
+	if err != nil {
 		for _, request := range bat {
 			request.callback(api.Response{}, err)
 		}
