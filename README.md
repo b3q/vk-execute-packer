@@ -1,12 +1,12 @@
 # vk-execute-packer (WIP)
-[![Documentation](https://pkg.go.dev/badge/github.com/zerobounty/vk-execute-packer)](https://pkg.go.dev/github.com/zerobounty/vk-execute-packer?tab=doc)
-[![Go Report Card](https://goreportcard.com/badge/github.com/zerobounty/vk-execute-packer)](https://goreportcard.com/report/github.com/zerobounty/vk-execute-packer)
-[![license](https://img.shields.io/github/license/zerobounty/vk-execute-packer.svg)](https://github.com/zerobounty/vk-execute-packer/blob/master/LICENSE)
+[![Documentation](https://pkg.go.dev/badge/github.com/zweihander/vk-execute-packer)](https://pkg.go.dev/github.com/zweihander/vk-execute-packer?tab=doc)
+[![Go Report Card](https://goreportcard.com/badge/github.com/zweihander/vk-execute-packer)](https://goreportcard.com/report/github.com/zweihander/vk-execute-packer)
+[![license](https://img.shields.io/github/license/zweihander/vk-execute-packer.svg)](https://github.com/zweihander/vk-execute-packer/blob/master/LICENSE)
 
 Пакер запросов для либы [vksdk](https://github.com/SevereCloud/vksdk)
 
 ```
-go get github.com/zerobounty/vk-execute-packer
+go get github.com/zweihander/vk-execute-packer
 ```
 
 ### Пример
@@ -17,9 +17,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/SevereCloud/vksdk/api"
-	"github.com/SevereCloud/vksdk/api/params"
-	packer "github.com/zerobounty/vk-execute-packer"
+	"github.com/SevereCloud/vksdk/v2/api"
+	"github.com/SevereCloud/vksdk/v2/api/params"
+	packer "github.com/zweihander/vk-execute-packer/v2"
 )
 
 func main() {
