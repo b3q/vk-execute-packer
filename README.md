@@ -1,5 +1,5 @@
 # vk-execute-packer (WIP)
-[![Documentation](https://pkg.go.dev/badge/github.com/zweihander/vk-execute-packer)](https://pkg.go.dev/github.com/zweihander/vk-execute-packer?tab=doc)
+[![Documentation](https://pkg.go.dev/badge/github.com/zweihander/vk-execute-packer/v2)](https://pkg.go.dev/github.com/zweihander/vk-execute-packer/v2?tab=doc)
 [![Go Report Card](https://goreportcard.com/badge/github.com/zweihander/vk-execute-packer)](https://goreportcard.com/report/github.com/zweihander/vk-execute-packer)
 [![license](https://img.shields.io/github/license/zweihander/vk-execute-packer.svg)](https://github.com/zweihander/vk-execute-packer/blob/master/LICENSE)
 
