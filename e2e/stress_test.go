@@ -5,9 +5,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/SevereCloud/vksdk/api"
+	"github.com/SevereCloud/vksdk/v2/api"
 	"github.com/stretchr/testify/assert"
-	packer "github.com/zerobounty/vk-execute-packer"
+	packer "github.com/zweihander/vk-execute-packer/v2"
 )
 
 func TestManyAPICalls(t *testing.T) {

@@ -7,14 +7,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/SevereCloud/vksdk/api"
-	"github.com/SevereCloud/vksdk/api/errors"
-	"github.com/SevereCloud/vksdk/object"
+	"github.com/SevereCloud/vksdk/v2/api"
+	"github.com/SevereCloud/vksdk/v2/object"
 )
 
 type request struct {
 	method   string
-	params   api.Params
+	params   []api.Params
 	callback func(api.Response, error)
 }
 
@@ -29,9 +28,10 @@ func (b batch) code() string {
 	sb.WriteString("return {")
 	for id, request := range b {
 		sb.WriteString(`"` + id + `":API.` + request.method + "({")
-		for name, value := range request.params {
+
+		iterateAll(func(name string, value interface{}) {
 			if name == "access_token" {
-				continue
+				return
 			}
 			valueString := ""
 			if s, ok := value.(string); ok {
@@ -40,7 +40,8 @@ func (b batch) code() string {
 				valueString = api.FmtValue(value, 0)
 			}
 			sb.WriteString(`"` + name + `":` + valueString + ",")
-		}
+		}, request.params...)
+
 		sb.WriteString("}),")
 	}
 	sb.WriteString("};")
@@ -76,14 +77,12 @@ func (p *Packer) trySendBatch(bat batch) error {
 			continue
 		}
 
-		var err error
 		methodResponse := api.Response{
 			Response: body,
 		}
 		if bytes.Equal(body, []byte("false")) {
-			methodErr := executeErrorToMethodError(request, pack.Errors[failedRequestIndex])
+			methodErr := executeErrorToMethodError(request, pack.ExecuteErrors[failedRequestIndex])
 			methodResponse.Error = methodErr
-			err = errors.New(methodErr)
 			failedRequestIndex++
 		}
 
@@ -91,7 +90,12 @@ func (p *Packer) trySendBatch(bat batch) error {
 			log.Printf("packer: batch: call handler %s (method %s): resp: %s, err: %s\n", name, request.method, body, err)
 		}
 
-		request.callback(methodResponse, err)
+		if methodResponse.Error.Code == api.ErrNoType {
+			request.callback(methodResponse, nil)
+		} else {
+			request.callback(methodResponse, methodResponse.Error)
+		}
+
 		delete(bat, name)
 	}
 
@@ -106,18 +110,18 @@ func (p *Packer) trySendBatch(bat batch) error {
 	return nil
 }
 
-func executeErrorToMethodError(req request, err object.ExecuteError) object.Error {
+func executeErrorToMethodError(req request, err api.ExecuteError) api.Error {
 	params := make([]object.BaseRequestParam, len(req.params))
-	for key, value := range req.params {
+	iterateAll(func(key string, value interface{}) {
 		params = append(params, object.BaseRequestParam{
 			Key:   key,
 			Value: api.FmtValue(value, 0),
 		})
-	}
+	}, req.params...)
 
-	return object.Error{
-		Message:       err.ErrorMsg,
-		Code:          err.ErrorCode,
+	return api.Error{
+		Message:       err.Msg,
+		Code:          api.ErrorType(err.Code),
 		RequestParams: params,
 	}
 }

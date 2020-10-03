@@ -5,9 +5,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/SevereCloud/vksdk/api"
+	"github.com/SevereCloud/vksdk/v2/api"
 	"github.com/stretchr/testify/assert"
-	packer "github.com/zerobounty/vk-execute-packer"
+	packer "github.com/zweihander/vk-execute-packer/v2"
 )
 
 func TestMain(t *testing.T) {
@@ -32,7 +32,7 @@ func TestMain(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		_, err := vk.UtilsResolveScreenName(nil)
-		assert.Errorf(t, err, "One of the parameters specified was missing or invalid: screen_name is undefined")
+		assert.EqualError(t, err, "api: One of the parameters specified was missing or invalid: screen_name is undefined")
 	}()
 	go func() {
 		defer wg.Done()

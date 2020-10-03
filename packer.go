@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/SevereCloud/vksdk/api"
+	"github.com/SevereCloud/vksdk/v2/api"
 )
 
 // VKHandler - alias to function which proceeds requests to VK API.
-type VKHandler = func(string, api.Params) (api.Response, error)
+type VKHandler = func(string, ...api.Params) (api.Response, error)
 
 // FilterMode - batch filter mode
 type FilterMode bool
@@ -111,23 +111,23 @@ func Default(vk *api.VK, opts ...Option) {
 }
 
 // Handler implements vk.Handler function, which proceeds requests to VK API.
-func (p *Packer) Handler(method string, params api.Params) (api.Response, error) {
+func (p *Packer) Handler(method string, params ...api.Params) (api.Response, error) {
 	if p.debug {
 		log.Printf("packer: Handler call (%s)\n", method)
 	}
 
 	if method == "execute" {
-		return p.vkHandler(method, params)
+		return p.vkHandler(method, params...)
 	}
 
 	_, found := p.filterMethods[method]
 	if (p.filterMode == Allow && !found) ||
 		(p.filterMode == Ignore && found) {
-		return p.vkHandler(method, params)
+		return p.vkHandler(method, params...)
 	}
 
 	if p.tokenLazyLoading {
-		tokenIface, ok := params["access_token"]
+		tokenIface, ok := getTokenFromParams(params...)
 		if !ok && p.tokenPool.Len() == 0 {
 			return api.Response{}, fmt.Errorf("packer: missing access_token param")
 		}
